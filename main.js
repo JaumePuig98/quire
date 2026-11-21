@@ -19,10 +19,9 @@ const DEFAULT_PREFS = {
   typewriter: true,
   fade: true,
   glow: true,
-  sound: false,
   goal: 0, // daily word goal, 0 = off
   fullscreen: true,
-  centerMode: 'soft', justify: true, fmtbar: true, bookGoal: 0, autoUpdate: true, // text slides sideways so the caret stays in the middle
+  readScope: 'chapter', centerMode: 'strict', justify: true, fmtbar: true, bookGoal: 0, autoUpdate: true, // text slides sideways so the caret stays in the middle
   accent: 'amber',
   recent: [],
   lastPath: null,
@@ -147,8 +146,12 @@ function fileFromArgv(argv) {
   }
   return null;
 }
+// What we last read from or wrote to each file: if the file on disk differs (git, OneDrive, Dropbox...), we never overwrite it blindly.
+const known = new Map();
+const hashOf = (t) => require('crypto').createHash('sha1').update(t).digest('hex');
+const diskChanged = (p) => { if (!known.has(p)) return false; try { return hashOf(fs.readFileSync(p, 'utf8')) !== known.get(p); } catch (e) { return false; } };
 function readDoc(p) {
-  try { return { path: p, text: fs.readFileSync(p, 'utf8') }; } catch (e) { return { path: p, error: 'Could not open ' + path.basename(p) + ': ' + e.message }; }
+  try { const text = fs.readFileSync(p, 'utf8'); known.set(p, hashOf(text)); return { path: p, text }; } catch (e) { return { path: p, error: 'Could not open ' + path.basename(p) + ': ' + e.message }; }
 }
 function addRecent(p) {
   prefs.lastPath = p;
@@ -188,7 +191,11 @@ function snapshot(text, force) {
 }
 
 /* ------------------------------- export ------------------------------- */
-const safeName = (s) => (s || 'Untitled').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Untitled';
+const safeName = (s) => {
+  let n = (s || 'Untitled').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80).replace(/[. ]+$/, '');
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(n)) n += '_';
+  return n || 'Untitled';
+};
 
 /* -------------------------------- IPC -------------------------------- */
 ipcMain.on('init:get', (e) => {
@@ -200,7 +207,7 @@ ipcMain.on('init:get', (e) => {
     try { recovery = fs.readFileSync(recoveryFile(), 'utf8'); } catch (err) { /* none */ }
     if (!recovery && prefs.lastPath && fs.existsSync(prefs.lastPath)) open = readDoc(prefs.lastPath);
   }
-  e.returnValue = { prefs, systemDark: nativeTheme.shouldUseDarkColors, open, recovery, fullscreen: win ? win.isFullScreen() : false };
+  e.returnValue = { prefs, defaults: DEFAULT_PREFS, systemDark: nativeTheme.shouldUseDarkColors, open, recovery, fullscreen: win ? win.isFullScreen() : false };
 });
 ipcMain.on('prefs:set', (e, p) => { Object.assign(prefs, p); savePrefs(); });
 
@@ -215,8 +222,54 @@ ipcMain.handle('doc:open-dialog', async () => {
 });
 ipcMain.handle('doc:open-path', (e, p) => readDoc(p));
 
-ipcMain.handle('doc:save', async (e, { path: p, text, suggested, saveAs }) => {
+/* ---- the app's own file browser ---- */
+const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+async function placesList() {
+  const out = [];
+  for (const [n, k] of [['Documents', 'documents'], ['Desktop', 'desktop'], ['Downloads', 'downloads'], ['Home', 'home']]) {
+    try { const p = app.getPath(k); if (fs.existsSync(p)) out.push({ name: n, path: p }); } catch (err) { /* skip */ }
+  }
+  if (process.platform === 'win32') {
+    // a disconnected network drive can take seconds to answer: ask for all letters at once and give up quickly
+    const drives = await Promise.all('ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(async (c) => {
+      const d = c + ':\\';
+      try { await within(fs.promises.access(d), 600); return { name: 'Drive ' + c + ':', path: d }; } catch (err) { return null; }
+    }));
+    out.push(...drives.filter(Boolean));
+  } else out.push({ name: 'Computer', path: '/' });
+  return out;
+}
+ipcMain.handle('fs:list', async (e, { dir, kind }) => {
+  let d = dir || (kind === 'export' ? prefs.lastExportDir : prefs.lastDir) || app.getPath('documents');
+  try { await within(fs.promises.access(d), 3000); } catch (err) { d = app.getPath('documents'); }
+  const res = { dir: d, parent: path.dirname(d) === d ? null : path.dirname(d), sep: path.sep, places: await placesList(), entries: [] };
   try {
+    const list = await within(fs.promises.readdir(d, { withFileTypes: true }), 5000); // a slow network folder never freezes the app
+    for (const ent of list) {
+      if (ent.name.startsWith('.') || ent.name === '$RECYCLE.BIN' || ent.name === 'System Volume Information') continue;
+      let isDir = ent.isDirectory();
+      if (!isDir && !ent.isFile()) { try { isDir = (await fs.promises.stat(path.join(d, ent.name))).isDirectory(); } catch (err) { continue; } }
+      res.entries.push({ name: ent.name, dir: isDir });
+    }
+    res.entries.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : a.dir ? -1 : 1));
+  } catch (err) { res.error = err.message === 'timeout' ? 'This folder is taking too long to open.' : 'This folder cannot be opened.'; }
+  return res;
+});
+ipcMain.handle('fs:mkdir', (e, { parent, name }) => {
+  try {
+    if (!String(name || '').trim()) return { error: 'Type a folder name.' };
+    const n = safeName(name);
+    const p = path.join(parent, n);
+    fs.mkdirSync(p);
+    return { path: p };
+  } catch (err) { return { error: err.code === 'EEXIST' ? 'That folder already exists.' : 'Could not create the folder.' }; }
+});
+ipcMain.handle('fs:exists', (e, p) => { try { return fs.existsSync(p); } catch (err) { return false; } });
+ipcMain.on('fs:remember', (e, { kind, dir }) => { if (typeof dir === 'string') { prefs[kind === 'export' ? 'lastExportDir' : 'lastDir'] = dir; savePrefs(); } });
+
+ipcMain.handle('doc:save', async (e, { path: p, text, suggested, saveAs, force }) => {
+  try {
+    if (p && !saveAs && !force && diskChanged(p)) return { conflict: true };
     if (!p || saveAs) {
       const r = await dialog.showSaveDialog(win, {
         title: saveAs ? 'Save as' : 'Save',
@@ -227,6 +280,7 @@ ipcMain.handle('doc:save', async (e, { path: p, text, suggested, saveAs }) => {
       p = r.filePath.toLowerCase().endsWith('.draft') ? r.filePath : r.filePath + '.draft';
     }
     atomicWrite(p, text);
+    known.set(p, hashOf(text));
     snapshot(text, true);
     addRecent(p);
     fs.unlink(recoveryFile(), () => {});
@@ -236,28 +290,44 @@ ipcMain.handle('doc:save', async (e, { path: p, text, suggested, saveAs }) => {
     return null;
   }
 });
-ipcMain.handle('doc:autosave', (e, { path: p, text }) => {
-  try { atomicWrite(p, text); snapshot(text); return true; } catch (err) { return false; }
+ipcMain.handle('doc:autosave', (e, { path: p, text, force }) => {
+  try {
+    if (!force && diskChanged(p)) return { conflict: true };
+    atomicWrite(p, text); known.set(p, hashOf(text)); snapshot(text); return { ok: true };
+  } catch (err) { return { ok: false }; }
+});
+ipcMain.handle('doc:changed', (e, p) => diskChanged(p));
+// before either version is lost, the other one goes into the history
+ipcMain.handle('doc:snapshot', (e, { text, path: p }) => {
+  try {
+    const t = p ? fs.readFileSync(p, 'utf8') : text;
+    const id = idOf(t); if (id) writeSnapshot(id, t);
+    return true;
+  } catch (err) { return false; }
 });
 ipcMain.on('recovery:save', (e, text) => { try { fs.mkdirSync(app.getPath('userData'), { recursive: true }); atomicWrite(recoveryFile(), text); } catch (err) { /* ignore */ } });
 ipcMain.on('recovery:clear', () => fs.unlink(recoveryFile(), () => {}));
 
-ipcMain.handle('doc:export', async (e, { format, doc, opts, suggested }) => {
+ipcMain.handle('doc:export', async (e, { format, doc, opts, suggested, path: chosen }) => {
   const ext = { md: 'md', txt: 'txt', docx: 'docx', pdf: 'pdf' }[format];
   if (!ext) return { error: 'Unknown format' };
   const label = { md: 'Markdown', txt: 'Plain text', docx: 'Word document', pdf: 'PDF' }[format];
-  const r = await dialog.showSaveDialog(win, {
-    title: 'Export as ' + label,
-    defaultPath: path.join(prefs.lastExportDir || app.getPath('documents'), safeName(suggested) + '.' + ext),
-    filters: [{ name: label, extensions: [ext] }],
-  });
-  if (r.canceled || !r.filePath) return { canceled: true };
+  let r;
+  if (chosen) r = { filePath: chosen.toLowerCase().endsWith('.' + ext) ? chosen : chosen + '.' + ext };
+  else {
+    r = await dialog.showSaveDialog(win, {
+      title: 'Export as ' + label,
+      defaultPath: path.join(prefs.lastExportDir || app.getPath('documents'), safeName(suggested) + '.' + ext),
+      filters: [{ name: label, extensions: [ext] }],
+    });
+    if (r.canceled || !r.filePath) return { canceled: true };
+  }
   try {
     D.validate(doc);
     let data;
     if (format === 'md') data = D.toMarkdown(doc, opts);
     else if (format === 'txt') data = D.toPlainText(doc, opts);
-    else if (format === 'docx') data = await X.toDocx(doc, opts);
+    else if (format === 'docx') data = await X.toDocx(doc, Object.assign({}, opts, { embedDir: path.join(__dirname, 'exporter-fonts') }));
     else data = await X.renderPdf(doc, opts, path.join(__dirname, 'renderer', 'fonts'));
     fs.writeFileSync(r.filePath, data);
     prefs.lastExportDir = path.dirname(r.filePath);

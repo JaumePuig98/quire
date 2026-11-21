@@ -29,11 +29,11 @@
   <button type="button" id="btnVersions" title="Earlier versions">History</button>
   <span class="grow"></span>
   <div id="modeWrap">
-    <button type="button" id="btnMode" aria-haspopup="menu" aria-expanded="false" title="Writing, review or reading mode">Mode: Writing</button>
+    <button type="button" id="btnMode" aria-haspopup="menu" aria-expanded="false" title="Writing, review or reading mode">Mode</button>
     <div id="modeMenu" role="menu" aria-label="Mode">
-      <button type="button" role="menuitemradio" data-mode="write" aria-checked="true"><span class="tick">&#10003;</span>Writing<span class="hint">&nbsp;</span></button>
-      <button type="button" role="menuitemradio" data-mode="review" aria-checked="false" title="Typos and notes stand out, nothing slides (Ctrl+Shift+R)"><span class="tick">&#10003;</span>Review<span class="hint">Ctrl+Shift+R</span></button>
-      <button type="button" role="menuitemradio" data-mode="read" aria-checked="false" title="Read-only (Ctrl+R)"><span class="tick">&#10003;</span>Read<span class="hint">Ctrl+R</span></button>
+      <button type="button" role="menuitemradio" data-mode="write" aria-checked="true">Writing</button>
+      <button type="button" role="menuitemradio" data-mode="review" aria-checked="false" title="Typos and notes stand out, nothing slides">Review</button>
+      <button type="button" role="menuitemradio" data-mode="read" aria-checked="false" title="Read-only">Read</button>
     </div>
   </div>
   <button type="button" id="btnSettings" title="Settings (Ctrl+,)">Settings</button>
@@ -54,7 +54,7 @@
   <span class="sep"></span>
   <button type="button" data-cmd="note" title="Add a note to the selected text (Ctrl+Alt+M)">Note<span class="hint">Ctrl+Alt+M</span></button>
 </div>
-<button type="button" id="fmtToggle" aria-controls="fmtbar" aria-expanded="true" title="Hide the formatting bar (Ctrl+/)">&#8964;</button>
+<button type="button" id="fmtToggle" aria-controls="fmtbar" aria-expanded="true" title="Hide the formatting bar (Ctrl+/)"></button>
 </div>
 <div id="findbar" role="search" aria-label="Find and replace" hidden>
   <div class="frow">
@@ -72,7 +72,11 @@
   </div>
   <label class="check"><input type="checkbox" id="findAllChapters"> Search all chapters</label>
 </div>
-<div id="readbar" hidden>Reading <span class="hint">Ctrl+R to write</span></div>
+<div id="readbar" hidden>
+  <span class="hint">Reading</span>
+  <div class="seg" id="readScope" data-pref="readScope" role="group" aria-label="What to read"><button type="button" data-v="chapter">This chapter</button><button type="button" data-v="book">Whole book</button></div>
+  <button type="button" id="readBack">Back to writing</button>
+</div>
 
 <div id="status" aria-live="polite"><span id="statusLeft"></span></div>
 <div id="saveState"></div>
@@ -97,35 +101,54 @@
   <label class="check"><input type="checkbox" id="exportNotes"> Include notes</label>
 </div>
 
-<!-- Settings -->
-<div id="settings" class="popover wide" role="dialog" aria-label="Settings" hidden>
-  <h2>Settings</h2>
-  <div class="row"><span>Theme</span>
-    <div class="seg" data-pref="theme"><button type="button" data-v="system">Auto</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></div></div>
-  <div class="row"><span>Accent color</span><div class="swatches" data-pref="accent" role="group" aria-label="Accent color"></div></div>
-  <div class="row"><span>Font</span>
-    <div class="seg" data-pref="font"><button type="button" data-v="serif">Serif</button><button type="button" data-v="sans">Sans</button></div></div>
-  <label class="check"><input type="checkbox" data-pref="justify"> Justify text (quotes stay as they are)</label>
-  <button type="button" id="btnMoreSettings" class="linkbtn" aria-expanded="false">More settings &#9662;</button>
-  <div id="settingsMore" hidden>
-  <div class="row"><span>Text weight</span><input type="range" min="300" max="560" step="10" data-pref="weight"><output data-out="weight"></output></div>
-  <div class="row"><span>Text size</span><input type="range" min="17" max="34" step="1" data-pref="size"><output data-out="size"></output></div>
-  <div class="row"><span>Column width</span><input type="range" min="480" max="940" step="10" data-pref="measure"><output data-out="measure"></output></div>
-  <div class="row"><span>Writing line height</span><input type="range" min="45" max="82" step="1" data-pref="anchor"><output data-out="anchor"></output></div>
-  <label class="check"><input type="checkbox" data-pref="typewriter"> Keep the writing line in place (typewriter scrolling)</label>
-  <div class="row"><span>Caret centering <small>(new text only)</small></span>
-    <div class="seg" data-pref="centerMode"><button type="button" data-v="off">Off</button><button type="button" data-v="soft">Soft</button><button type="button" data-v="strict">Strict</button></div></div>
-  <label class="check"><input type="checkbox" data-pref="fmtbar"> Show the formatting bar (Ctrl+/)</label>
-  <label class="check"><input type="checkbox" data-pref="fade"> Fade earlier text</label>
-  <label class="check"><input type="checkbox" data-pref="glow"> Soft light at the writing line</label>
-  <label class="check"><input type="checkbox" data-pref="sound"> Typewriter sounds</label>
-  <div class="row"><span>Daily word goal <small>(0 = off)</small></span><input type="number" min="0" max="100000" step="50" data-pref="goal"></div>
-  <div class="row"><span>Book target <small>(words, 0 = off)</small></span><input type="number" min="0" max="2000000" step="1000" data-pref="bookGoal"></div>
-  <label class="check"><input type="checkbox" data-pref="autoUpdate"> Check for updates automatically (installed version only)</label>
-  <div class="row"><span>Spellcheck language</span><select id="spellA" aria-label="Spellcheck language"></select></div>
-  <div class="row"><span>Also check</span><select id="spellB" aria-label="Second spellcheck language"></select></div>
+<!-- Settings: a page of its own -->
+<div id="settings" role="dialog" aria-modal="true" aria-label="Settings" hidden>
+  <div class="st-box">
+    <div class="st-head"><strong>Settings</strong><span class="grow"></span><button type="button" id="resetAll" class="linkbtn" title="Put every setting back to its default">Reset all</button><button type="button" id="settingsClose">Done</button></div>
+    <div class="st-body">
+      <nav class="st-nav" aria-label="Settings sections">
+        <button type="button" data-sec="look" class="on">Appearance</button>
+        <button type="button" data-sec="page">Page</button>
+        <button type="button" data-sec="line">Writing line</button>
+        <button type="button" data-sec="goals">Goals</button>
+        <button type="button" data-sec="lang">Language/button>
+      </nav>
+      <div class="st-pane">
+      <section data-secpane="look">
+        <div class="row"><span>Theme</span>
+          <div class="seg" data-pref="theme"><button type="button" data-v="system">Auto</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></div></div>
+        <div class="row"><span>Accent color</span><div class="swatches" data-pref="accent" role="group" aria-label="Accent color"></div></div>
+        <div class="row"><span>Font</span>
+          <div class="seg" data-pref="font"><button type="button" data-v="serif">Literata</button><button type="button" data-v="sans">Nunito</button><button type="button" data-v="type">Typewriter</button></div></div>
+        <label class="check"><input type="checkbox" data-pref="justify"> Justify text <span class="hint">quotes stay as they are</span></label>
+        <label class="check"><input type="checkbox" data-pref="fmtbar"> Show the formatting bar <span class="hint">Ctrl+/</span></label>
+      </section>
+      <section data-secpane="page" hidden>
+        <div class="row slider"><span>Text weight</span><input type="range" min="300" max="560" step="10" data-pref="weight" aria-label="Text weight"><span class="num"><input type="number" min="300" max="560" step="10" data-num="weight" aria-label="Text weight, exact value"><em></em></span><button type="button" class="reset" data-reset="weight" title="Back to the default" aria-label="Reset Text weight">&#8634;</button></div>
+        <div class="row slider"><span>Text size</span><input type="range" min="17" max="34" step="1" data-pref="size" aria-label="Text size"><span class="num"><input type="number" min="17" max="34" step="1" data-num="size" aria-label="Text size, exact value"><em>px</em></span><button type="button" class="reset" data-reset="size" title="Back to the default" aria-label="Reset Text size">&#8634;</button></div>
+        <div class="row slider"><span>Column width</span><input type="range" min="480" max="940" step="10" data-pref="measure" aria-label="Column width"><span class="num"><input type="number" min="480" max="940" step="10" data-num="measure" aria-label="Column width, exact value"><em>px</em></span><button type="button" class="reset" data-reset="measure" title="Back to the default" aria-label="Reset Column width">&#8634;</button></div>
+      </section>
+      <section data-secpane="line" hidden>
+        <label class="check"><input type="checkbox" data-pref="typewriter"> Typewriter scrolling <span class="hint">the line you write stays put</span></label>
+        <div class="row slider"><span>Line position</span><input type="range" min="45" max="82" step="1" data-pref="anchor" aria-label="Line position"><span class="num"><input type="number" min="45" max="82" step="1" data-num="anchor" aria-label="Line position, exact value"><em>%</em></span><button type="button" class="reset" data-reset="anchor" title="Back to the default" aria-label="Reset Line position">&#8634;</button></div>
+        <div class="row"><span>Caret centering <small>new text only</small></span>
+          <div class="seg" data-pref="centerMode"><button type="button" data-v="off">Off</button><button type="button" data-v="soft">Soft</button><button type="button" data-v="strict">Centered</button></div></div>
+        <label class="check"><input type="checkbox" data-pref="fade"> Fade earlier text</label>
+        <label class="check"><input type="checkbox" data-pref="glow"> Soft light at the writing line</label>
+      </section>
+      <section data-secpane="goals" hidden>
+        <div class="row"><span>Daily word goal <small>0 = off</small></span><input type="number" class="plain" min="0" max="100000" step="50" data-pref="goal" aria-label="Daily word goal"></div>
+        <div class="row"><span>Book target <small>words, 0 = off</small></span><input type="number" class="plain" min="0" max="2000000" step="1000" data-pref="bookGoal" aria-label="Book target in words"></div>
+      </section>
+      <section data-secpane="lang" hidden>
+        <div class="row"><span>Spellcheck language</span><select id="spellA" aria-label="Spellcheck language"></select></div>
+        <div class="row"><span>Also check</span><select id="spellB" aria-label="Second spellcheck language"></select></div>
+        <label class="check"><input type="checkbox" data-pref="autoUpdate"> Check for updates automatically <span class="hint">installed version only</span></label>
+      </section>
+      </div>
+    </div>
+    <p class="small">Ctrl+Alt+M note &middot; Ctrl+Shift+O chapters &middot; F11 full screen</p>
   </div>
-  <p class="small">Ctrl+R reading mode · Ctrl+Alt+M note · Ctrl+Shift+O chapters · F11 full screen</p>
 </div>
 
 <!-- Note editor -->
@@ -144,9 +167,27 @@
   </div>
 </div>
 
+<!-- File browser (Save, Open, Export) -->
+<div id="fileDlg" hidden>
+  <div class="modal-box fd" role="dialog" aria-modal="true" aria-labelledby="fdTitle">
+    <div class="panel-head"><strong id="fdTitle">Save</strong><button type="button" id="fdCancel">Cancel</button></div>
+    <div class="fd-body">
+      <nav id="fdPlaces" aria-label="Places"></nav>
+      <div class="fd-main">
+        <div class="fd-path"><button type="button" id="fdUp" title="Up one folder" aria-label="Up one folder">&#8593;</button><div id="fdCrumbs"></div><button type="button" id="fdNew">New folder</button></div>
+        <ul id="fdList" role="listbox" aria-label="Files and folders" tabindex="0"></ul>
+        <div class="fd-name" id="fdNameRow"><label for="fdName" class="small">Name</label><input id="fdName" type="text" autocomplete="off" spellcheck="false"><span id="fdExt"></span></div>
+        <p class="small fd-msg" id="fdMsg" role="status"></p>
+      </div>
+    </div>
+    <div class="actions"><button type="button" id="fdSystem" class="linkbtn">Use the Windows dialog</button><span class="grow"></span><button type="button" id="fdOk" class="primary">Save</button></div>
+  </div>
+</div>
+
 <div id="toast" role="status"></div>
 
 <script src="../shared/doc.js"></script>
+<script src="filebrowser.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 // Export: Word (.docx) and the HTML used to print PDFs. Markdown/plain text live in shared/doc.js.
+const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const D = require('./shared/doc.js');
@@ -11,8 +12,9 @@ const A4 = { width: 11906, height: 16838 };
 const MARGIN = 1418; // 2.5 cm
 
 const FONTS = {
-  serif: { word: 'Times New Roman', css: "'Source Serif 4', 'Times New Roman', serif" },
-  sans: { word: 'Arial', css: "'Inter', Arial, sans-serif" },
+  serif: { word: 'Literata', embed: 'literata', css: "'Literata', Georgia, serif" },
+  sans: { word: 'Nunito', embed: 'nunito', css: "'Nunito', Calibri, sans-serif" },
+  type: { word: 'Courier Prime', embed: 'courier-prime', css: "'Courier Prime', 'Courier New', monospace" },
 };
 
 /* ---------------------------- Word ---------------------------- */
@@ -73,7 +75,7 @@ async function toDocx(doc, opts) {
       if (!D.blockText(b).trim()) continue;
       const lvl = D.blockLevel(b, plan.shift);
       if (lvl) children.push(new Paragraph({ heading: heading(lvl), children: runsFor(b) }));
-      else if (b.t === 'quote') children.push(new Paragraph({ style: 'Quote', alignment: D.isCite(b) ? AlignmentType.RIGHT : AlignmentType.LEFT, children: runsFor(b) }));
+      else if (b.t === 'quote') children.push(new Paragraph({ style: 'Quote', alignment: AlignmentType.RIGHT, children: runsFor(b) }));
       else children.push(new Paragraph({ alignment: opts.justify === false ? undefined : AlignmentType.JUSTIFIED, children: runsFor(b) }));
     }
   });
@@ -85,7 +87,18 @@ async function toDocx(doc, opts) {
     paragraph: { spacing: { before, after }, keepNext: true, keepLines: true },
   });
 
+  // Word files carry their own copy of the font, so they look the same on a PC that does not have it.
+  let embedded;
+  const fdef = FONTS[opts.font] || FONTS.serif;
+  if (opts.embedDir && fdef.embed) {
+    try {
+      const rd = (t) => fs.readFileSync(path.join(opts.embedDir, fdef.embed + '-' + t + '.ttf'));
+      embedded = [{ name: fdef.word, data: rd('r'), bold: rd('b'), italic: rd('i'), boldItalic: rd('bi') }];
+    } catch (err) { embedded = undefined; } // missing files: the font name alone still works where the font is installed
+  }
+
   const document = new Document({
+    fonts: embedded,
     creator: opts.author || 'Author',
     title: doc.title || '',
     comments: notes.length ? comments : undefined,
@@ -161,16 +174,16 @@ function toHtml(doc, opts) {
   const face = (family, file, weight, style) =>
     fontsDir ? "@font-face{font-family:'" + family + "';font-weight:" + weight + ';font-style:' + style +
       ';src:url("' + pathToFileURL(path.join(fontsDir, file)).href + '") format("woff2");}\n' : '';
+  const face2 = (family, file, wt, style) =>
+    fontsDir ? "@font-face{font-family:'" + family + "';font-weight:" + wt + ';font-style:' + style +
+      ';src:url("' + pathToFileURL(path.join(fontsDir, file)).href + '") format("woff2");}\n' : '';
   const fontCss =
-    face('Source Serif 4', 'source-serif-4-latin-400-normal.woff2', 400, 'normal') +
-    face('Source Serif 4', 'source-serif-4-latin-400-italic.woff2', 400, 'italic') +
-    face('Source Serif 4', 'source-serif-4-latin-700-normal.woff2', 700, 'normal') +
-    face('Source Serif 4', 'source-serif-4-latin-700-italic.woff2', 700, 'italic') +
-    face('Source Serif 4', 'source-serif-4-latin-ext-400-normal.woff2', 400, 'normal') +
-    face('Inter', 'inter-latin-400-normal.woff2', 400, 'normal') +
-    face('Inter', 'inter-latin-400-italic.woff2', 400, 'italic') +
-    face('Inter', 'inter-latin-700-normal.woff2', 700, 'normal') +
-    face('Inter', 'inter-latin-700-italic.woff2', 700, 'italic');
+    face2('Literata', 'literata-latin-wght-normal.woff2', '200 900', 'normal') + face2('Literata', 'literata-latin-wght-italic.woff2', '200 900', 'italic') +
+    face2('Literata', 'literata-latin-ext-wght-normal.woff2', '200 900', 'normal') + face2('Literata', 'literata-latin-ext-wght-italic.woff2', '200 900', 'italic') +
+    face2('Nunito', 'nunito-latin-wght-normal.woff2', '400 700', 'normal') + face2('Nunito', 'nunito-latin-wght-italic.woff2', '400 700', 'italic') +
+    face2('Nunito', 'nunito-latin-ext-wght-normal.woff2', '400 700', 'normal') + face2('Nunito', 'nunito-latin-ext-wght-italic.woff2', '400 700', 'italic') +
+    face2('Courier Prime', 'courier-prime-latin-400-normal.woff2', 400, 'normal') + face2('Courier Prime', 'courier-prime-latin-400-italic.woff2', 400, 'italic') +
+    face2('Courier Prime', 'courier-prime-latin-700-normal.woff2', 700, 'normal') + face2('Courier Prime', 'courier-prime-latin-700-italic.woff2', 700, 'italic');
 
   return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(doc.title || 'Document') + '</title><style>\n' + fontCss +
     '@page{size:A4;margin:25mm}\n' +
@@ -182,7 +195,7 @@ function toHtml(doc, opts) {
     'h2{font-size:15pt;margin:1.5em 0 .5em}\n' +
     'h3{font-size:12.5pt;margin:1.3em 0 .4em}\n' +
     'h1+*,h2+*,h3+*{break-before:avoid}\n' +
-    'blockquote{margin:0 0 .2em 38%;padding:0;font-size:.92em;font-style:italic;break-inside:avoid;page-break-inside:avoid}\n' +
+    'blockquote{margin:0 0 .2em 38%;padding:0;font-size:.92em;font-style:italic;text-align:right;break-inside:avoid;page-break-inside:avoid}\n' +
     'blockquote.cite{font-style:normal;text-align:right}\n' +
     ':not(blockquote)+blockquote,blockquote+:not(blockquote){margin-top:1em}\n' +
     '.newpage{break-before:page;page-break-before:always}\n' +

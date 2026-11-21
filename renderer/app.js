@@ -14,6 +14,7 @@
   /* ============================ state ============================ */
   const init = window.api.init();
   let prefs = init.prefs;
+  const DEFAULTS = init.defaults || {};
   let systemDark = init.systemDark;
   let doc = null;
   let cur = 0; // index of the chapter in the editor
@@ -50,10 +51,13 @@
     plum: { ink: '128 85 150', name: 'Plum', l: '128 85 150', d: '190 150 215', gl: '226 206 240', gd: '170 130 200' },
     slate: { ink: '90 90 95', name: 'Slate', l: '90 90 95', d: '190 190 195', gl: '226 226 231', gd: '200 200 210' },
   };
+  const CHEV_R = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.2 2.2 8 6l-3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const CHEV_L = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.8 2.2 4 6l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   function savePrefs(patch) {
     Object.assign(prefs, patch);
     window.api.setPrefs(patch);
     applyPrefs();
+    if (patch.readScope !== undefined && reading) renderChapter();
   }
   function applyPrefs() {
     const dark = prefs.theme === 'dark' || (prefs.theme === 'system' && systemDark);
@@ -64,7 +68,7 @@
     document.body.classList.toggle('fmthidden', fmtHidden);
     const ft = $('#fmtToggle');
     if (ft) {
-      ft.innerHTML = fmtHidden ? 'Aa' : '&#8964;';
+      ft.innerHTML = fmtHidden ? CHEV_L : CHEV_R;
       ft.title = fmtHidden ? 'Show the formatting bar (Ctrl+/)' : 'Hide the formatting bar (Ctrl+/)';
       ft.setAttribute('aria-expanded', String(!fmtHidden));
     }
@@ -83,7 +87,10 @@
     }
     if (sw) $$('button', sw).forEach((b) => { const a = ACCENTS[b.dataset.v]; b.style.background = 'rgb(' + (dark ? a.d : a.l) + ')'; });
     root.style.setProperty('--fs', prefs.size + 'px');
-    root.style.setProperty('--fw', prefs.weight || 400);
+    const oneWeight = prefs.font === 'type'; // Courier Prime comes in a single weight
+    root.style.setProperty('--fw', oneWeight ? 400 : (prefs.weight || 400));
+    $$('[data-pref=weight],[data-num=weight]').forEach((el) => { el.disabled = oneWeight; });
+    const wrow = $('[data-pref=weight]'); if (wrow) { const rw = wrow.closest('.row'); rw.classList.toggle('disabled', oneWeight); rw.title = oneWeight ? 'The Typewriter font has one weight' : ''; }
     root.style.setProperty('--measure', prefs.measure + 'px');
     root.style.setProperty('--anchor', prefs.anchor);
     document.body.classList.toggle('nofade', !prefs.fade);
@@ -96,7 +103,8 @@
       else if (el.type === 'checkbox') el.checked = !!prefs[k];
       else if (document.activeElement !== el) el.value = prefs[k];
     });
-    $$('[data-out]').forEach((o) => { const k = o.dataset.out; o.textContent = k === 'anchor' ? prefs[k] + '%' : k === 'weight' ? ({ 300: 'Light', 400: 'Regular', 500: 'Medium' }[prefs[k]] || prefs[k]) : prefs[k] + 'px'; });
+    $$('[data-num]').forEach((el) => { if (document.activeElement !== el) el.value = prefs[el.dataset.num]; });
+    $$('[data-reset]').forEach((b) => { b.classList.toggle('show', DEFAULTS[b.dataset.reset] !== undefined && prefs[b.dataset.reset] !== DEFAULTS[b.dataset.reset]); });
     kick(false);
     if (reading) layoutGutter();
     updateStatus();
@@ -174,8 +182,10 @@
     }).join('');
   }
 
+  let bookScrollRef = -1; // where the page was put by the program; only a real scroll by the reader changes the chapter
+  const readingBook = () => reading && prefs.readScope === 'book';
   function syncFromDom() {
-    if (!doc) return;
+    if (!doc || readingBook()) return; // the page then holds the whole book and the text cannot be edited
     doc.chapters[cur].blocks = domToBlocks(editor);
     wordCounts[cur] = D.countWords(doc.chapters[cur].blocks);
   }
@@ -189,6 +199,16 @@
   function renderChapter() {
     setLive(null);
     layoutMarks();
+    if (readingBook()) {
+      const multi = doc.chapters.length > 1;
+      editor.innerHTML = doc.chapters.map((c, i) => (multi ? '<div class="chapsep" data-ch="' + i + '" contenteditable="false">' + (c.title.trim() ? c.title.trim().replace(/&/g, '&amp;').replace(/</g, '&lt;') : '* * *') + '</div>' : '') + blocksToHtml(c.blocks)).join('');
+      const s = editor.querySelector('.chapsep[data-ch="' + cur + '"]');
+      scroller.scrollTop = s ? Math.max(0, s.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 40) : 0;
+      bookScrollRef = scroller.scrollTop;
+      layoutGutter();
+      if (!fb.hidden) { find.ranges = collectRanges(); paintFind(); }
+      return;
+    }
     editor.innerHTML = blocksToHtml(doc.chapters[cur].blocks);
     if (!histFor().stack.length) { const st = snapState(); st.caret = null; histFor().stack.push(st); histFor().i = 0; }
     scroller.scrollTop = 0;
@@ -241,17 +261,27 @@
     }
   }
   function updateTitle() {
-    window.api.setTitle(baseName(filePath) + ' — Quire');
+    window.api.setTitle((filePath ? baseName(filePath) : docTitle()) + ' | Quire');
   }
   function setSaveState(s) { $('#saveState').textContent = s; }
+
+  /* ============================ own file browser: renderer/filebrowser.js ============================ */
+  const dirOf = (p) => { const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')); return i > 0 ? p.slice(0, i) : p; };
+  const pickFile = (o) => window.QuireFiles.pick(o, { before: closePanels, after: () => { if (!reading) editor.focus(); } });
 
   /* ---- names: the title gives the file names ---- */
   function firstHeading() {
     for (const c of doc.chapters) for (const b of c.blocks) if (b.t === 'h1' && D.blockText(b).trim()) return D.blockText(b).trim();
     return '';
   }
+  // A chapter without its own title is named after the first heading 1 inside it.
+  function chapterHeading(c) {
+    for (const b of c.blocks) if (b.t === 'h1' && D.blockText(b).trim()) return D.blockText(b).trim();
+    return '';
+  }
+  const chapterName = (c) => c.title.trim() || chapterHeading(c);
   function docTitle() {
-    return (doc.title || '').trim() || firstHeading() || doc.chapters[0].title.trim() || firstWords() || 'Untitled';
+    return (doc.title || '').trim() || firstHeading() || chapterName(doc.chapters[0]) || firstWords() || 'Untitled';
   }
   const draftName = () => D.slugify(docTitle()) + '.draft';
   function updateFileHint() {
@@ -265,7 +295,17 @@
     setSaveState('Saving\u2026');
     const oldId = doc.id;
     if (mode === 'as' && filePath) doc.id = D.uid();
-    const r = await window.api.save({ path: filePath, saveAs: mode === 'as', text: D.serializeDraft(doc), suggested: D.slugify(docTitle()) });
+    let target = filePath, system = false;
+    if (!filePath || mode === 'as') {
+      const p = await pickFile({ mode: 'save', kind: 'doc', title: mode === 'as' ? 'Save as' : 'Save', name: filePath ? baseName(filePath).replace(/\.draft$/i, '') : D.slugify(docTitle()), exts: ['.draft'], startDir: filePath ? dirOf(filePath) : '' });
+      if (p === null) { doc.id = oldId; setSaveState(dirty ? 'Not saved yet' : 'Saved'); return false; }
+      if (p === 'system') system = true; else target = p;
+    }
+    let r = await window.api.save({ path: system ? filePath : target, saveAs: system && mode === 'as', text: D.serializeDraft(doc), suggested: D.slugify(docTitle()) });
+    if (r && r.conflict) {
+      const how = await resolveConflict();
+      r = how === 'force' ? await window.api.save({ path: filePath, text: D.serializeDraft(doc), suggested: D.slugify(docTitle()), force: true }) : null;
+    }
     if (!r) { doc.id = oldId; setSaveState(dirty ? 'Not saved yet' : 'Saved'); return false; }
     filePath = r.path;
     dirty = false;
@@ -290,13 +330,53 @@
     clearTimeout(autoTimer);
     autoTimer = setTimeout(autosave, filePath ? 2500 : 1500);
   }
+  // The file changed on disk while it was open here (git, OneDrive, Dropbox...). Nothing is overwritten until you choose.
+  let conflictOpen = false, conflictPaused = false;
+  async function resolveConflict() {
+    if (conflictOpen) return false;
+    conflictOpen = true;
+    try {
+      setSaveState('Changed outside Quire');
+      const c = await window.api.confirm({
+        message: '\u201c' + baseName(filePath) + '\u201d was changed outside Quire.',
+        detail: 'Another program (git, OneDrive, Dropbox) wrote to this file. Whichever version you do not keep goes into History first, so nothing is lost.',
+        buttons: ['Keep mine', 'Load theirs', 'Save mine as a copy', 'Decide later'],
+      });
+      if (c === 0) { await window.api.snapshotDoc({ path: filePath }); conflictPaused = false; return 'force'; }
+      if (c === 1) {
+        await window.api.snapshotDoc({ text: D.serializeDraft(snapshotDoc()) });
+        conflictPaused = false;
+        const r = await window.api.openPath(filePath);
+        dirty = false; await openResult(r);
+        toast('Loaded the version from disk. Yours is in History.');
+        return false;
+      }
+      if (c === 2) { conflictPaused = false; await save('as'); return false; }
+      conflictPaused = true; window.api.recoverySave(D.serializeDraft(snapshotDoc()));
+      setSaveState('Not saved: file changed on disk');
+      return false;
+    } finally { conflictOpen = false; }
+  }
+  window.addEventListener('focus', async () => {
+    if (!filePath || conflictOpen || !doc) return;
+    if (!(await window.api.docChanged(filePath))) return;
+    if (!dirty) { const r = await window.api.openPath(filePath); await openResult(r); toast('Reloaded: the file was changed outside Quire.'); }
+    else { conflictPaused = false; const how = await resolveConflict(); if (how === 'force') await autosave(); }
+  });
   async function autosave() {
     if (!doc) return;
     snapshotDoc();
     const text = D.serializeDraft(doc);
+    if (!filePath) { updateTitle(); updateFileHint(); }
     if (filePath) {
-      const ok = await window.api.autosave({ path: filePath, text });
-      if (ok) { dirty = false; setSaveState('Saved'); } else setSaveState('Could not save');
+      if (conflictPaused) { window.api.recoverySave(text); return; }
+      let r = await window.api.autosave({ path: filePath, text });
+      if (r && r.conflict) {
+        const how = await resolveConflict();
+        if (how !== 'force') return;
+        r = await window.api.autosave({ path: filePath, text, force: true });
+      }
+      if (r && r.ok) { dirty = false; setSaveState('Saved'); } else setSaveState('Could not save');
     } else {
       window.api.recoverySave(text);
       setSaveState(D.countDoc(doc) ? 'Draft kept safe' : '');
@@ -321,7 +401,9 @@
   async function doOpen() {
     if (!(await confirmDiscard())) return;
     if (filePath && dirty) await autosave();
-    await openResult(await window.api.openDialog());
+    const p = await pickFile({ mode: 'open', kind: 'doc', title: 'Open', exts: ['.draft', '.md', '.markdown', '.txt'], startDir: filePath ? dirOf(filePath) : '' });
+    if (p === null) return;
+    await openResult(p === 'system' ? await window.api.openDialog() : await window.api.openPath(p));
   }
 
   /* ============================ word count + goal ============================ */
@@ -356,7 +438,7 @@
     const ch = doc.chapters[cur];
     const multi = doc.chapters.length > 1;
     const parts = [];
-    if (multi) parts.push((ch.title.trim() || 'Chapter ' + (cur + 1)));
+    if (multi) parts.push(chapterName(ch) || 'Chapter ' + (cur + 1));
     const w = wordCounts[cur] || 0;
     parts.push(w.toLocaleString() + (w === 1 ? ' word' : ' words'));
     if (multi) parts.push(totalWords().toLocaleString() + ' in total');
@@ -515,7 +597,7 @@
           if (!recentering) target = shiftX;
         }
         const oldTop = lineKey, oldShift = shiftX, changed = lineKey !== null && top !== lineKey;
-        if (changed) shiftX = target; // a new line starts at the middle, like a carriage return
+        if (changed || mode === 'strict') shiftX = target; // a new line starts at the middle, like a carriage return; strict keeps the caret exactly there
         else {
           const dx = target - shiftX;
           if (Math.abs(dx) < 0.6 || motionQuery.matches) shiftX = target; else { shiftX += dx * 0.3; more = true; }
@@ -530,6 +612,17 @@
     else if (canFollow) { follow = false; typedKick = false; }
   }
   scroller.addEventListener('scroll', () => { if (scroller.scrollLeft) scroller.scrollLeft = 0; });
+  let scrollRaf = 0;
+  scroller.addEventListener('scroll', () => {
+    if (!readingBook() || scrollRaf || Math.abs(scroller.scrollTop - bookScrollRef) < 3) return;
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = 0;
+      const top = scroller.getBoundingClientRect().top + 120;
+      let at = cur;
+      for (const s of editor.querySelectorAll('.chapsep')) { if (s.getBoundingClientRect().top <= top) at = +s.dataset.ch; else break; }
+      if (at !== cur) { cur = at; updateStatus(); if (!$('#outline').hidden) renderOutline(); }
+    });
+  });
 
   /* ============================ undo / redo ============================ */
   // Own history, one per chapter, so switching chapters never loses it. A state is the chapter's content plus the caret.
@@ -1041,7 +1134,7 @@
   /* ============================ reading mode ============================ */
   function updateModeUI() {
     const m = reading ? 'read' : review ? 'review' : 'write';
-    $('#btnMode').textContent = 'Mode: ' + { write: 'Writing', review: 'Review', read: 'Read' }[m];
+    $('#btnMode').title = 'Mode: ' + { write: 'Writing', review: 'Review', read: 'Read' }[m];
     $('#btnMode').classList.toggle('on', m !== 'write');
     $$('#modeMenu [data-mode]').forEach((b) => { const on = b.dataset.mode === m; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
   }
@@ -1075,8 +1168,8 @@
     closePanels();
     layoutMarks();
     if (on) {
-      scroller.scrollTop = 0;
-      layoutGutter();
+      if (prefs.readScope === 'book') renderChapter();
+      else { scroller.scrollTop = 0; layoutGutter(); }
     } else {
       renderChapter();
       editor.focus();
@@ -1087,7 +1180,7 @@
 
   /* ============================ chapters ============================ */
   function selectChapter(i) {
-    if (i < 0 || i >= doc.chapters.length || i === cur) return;
+    if (i < 0 || i >= doc.chapters.length || (i === cur && !readingBook())) return;
     commitHistory();
     syncFromDom();
     cur = i;
@@ -1104,7 +1197,7 @@
       if (i === cur) li.className = 'current';
       const num = document.createElement('span'); num.className = 'num'; num.textContent = i + 1;
       const inp = document.createElement('input');
-      inp.value = c.title; inp.placeholder = 'Untitled chapter'; inp.setAttribute('aria-label', 'Chapter ' + (i + 1) + ' title');
+      inp.value = c.title; inp.placeholder = chapterHeading(c) || 'Untitled chapter'; inp.setAttribute('aria-label', 'Chapter ' + (i + 1) + ' title');
       inp.addEventListener('focus', () => { if (i !== cur) selectChapter(i); });
       inp.addEventListener('input', () => { c.title = inp.value; markDirty(); updateStatus(); });
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); closeOutline(); } });
@@ -1139,7 +1232,7 @@
   }
   async function deleteChapter(i) {
     if (doc.chapters.length < 2) return;
-    const c = await window.api.confirm({ message: 'Delete “' + (doc.chapters[i].title || 'Untitled chapter') + '”?', detail: 'Its text and notes will be removed. Earlier versions in History still contain it.', buttons: ['Delete', 'Cancel'] });
+    const c = await window.api.confirm({ message: 'Delete “' + (chapterName(doc.chapters[i]) || 'Untitled chapter') + '”?', detail: 'Its text and notes will be removed. Earlier versions in History still contain it.', buttons: ['Delete', 'Cancel'] });
     if (c !== 0) return;
     syncFromDom();
     doc.chapters.splice(i, 1);
@@ -1157,16 +1250,20 @@
     const inputs = $$('#chapterList input');
     if (inputs.length) inputs[inputs.length - 1].focus();
   }
-  function openOutline() { closePanels(); $('#outline').hidden = false; renderOutline(); }
+  function openOutline() { syncFromDom(); closePanels(); $('#outline').hidden = false; renderOutline(); }
   function closeOutline() { $('#outline').hidden = true; if (!reading) { editor.focus(); } }
 
   /* ============================ export / history ============================ */
   async function doExport(format) {
     $('#exportMenu').hidden = true;
     snapshotDoc();
+    const ext = { docx: '.docx', pdf: '.pdf', md: '.md', txt: '.txt' }[format];
+    const label = { docx: 'Word document', pdf: 'PDF', md: 'Markdown', txt: 'Plain text' }[format];
+    const chosen = await pickFile({ mode: 'save', kind: 'export', title: 'Export as ' + label, name: D.slugify(docTitle()) === 'untitled' ? 'Untitled' : docTitle(), exts: [ext], ok: 'Export' });
+    if (chosen === null) { if (!reading) editor.focus(); return; }
     toast('Preparing ' + format.toUpperCase() + '…');
     const r = await window.api.exportDoc({
-      format, doc, suggested: docTitle(),
+      format, doc, suggested: docTitle(), path: chosen === 'system' ? undefined : chosen,
       opts: { notes: $('#exportNotes').checked, font: prefs.font, justify: prefs.justify !== false, author: doc.author || undefined },
     });
     if (r && r.error) await window.api.error('Export failed: ' + r.error);
@@ -1211,7 +1308,7 @@
     ['#exportMenu', '#settings'].forEach((s) => ($(s).hidden = true));
     $('#outline').hidden = true;
   }
-  const anyPanelOpen = () => ['#exportMenu', '#settings', '#outline', '#notePop', '#modal'].some((s) => !$(s).hidden);
+  const anyPanelOpen = () => ['#exportMenu', '#settings', '#outline', '#notePop', '#modal', '#fileDlg'].some((s) => !$(s).hidden);
   function placePopover(pop, btn, align) {
     const b = btn.getBoundingClientRect();
     const w = pop.offsetWidth;
@@ -1221,13 +1318,15 @@
     pop.style.top = (b.bottom + 8) + 'px';
   }
   function toggle(sel, btnSel, align) {
+    if (sel === '#outline' && $(sel).hidden) { openOutline(); return; }
     const open = !$(sel).hidden;
     closePanels();
     $(sel).hidden = open;
     if (!open) {
       showChrome();
-      if (btnSel) placePopover($(sel), $(btnSel), align);
-      if (sel === '#settings' || sel === '#exportMenu') { const f = $(sel).querySelector('button,input,select'); if (f) f.focus({ preventScroll: true }); }
+      if (btnSel && sel !== '#settings') placePopover($(sel), $(btnSel), align);
+      if (sel === '#settings') { const f = $('#settings .st-nav button.on'); if (f) f.focus({ preventScroll: true }); }
+      else if (sel === '#exportMenu') { const f = $(sel).querySelector('button,input,select'); if (f) f.focus({ preventScroll: true }); }
     } else if (!reading) editor.focus();
   }
 
@@ -1242,33 +1341,7 @@
     }, 2200);
   }
   function showChromeLater() { clearTimeout(idleTimer); idleTimer = setTimeout(showChrome, 1500); }
-  function hideChrome() { if (!anyPanelOpen()) document.body.classList.add('idle'); }
-
-  /* ============================ sound ============================ */
-  let actx, clickBuf;
-  function ensureAudio() {
-    if (actx) return;
-    actx = new (window.AudioContext || window.webkitAudioContext)();
-    const len = Math.floor(actx.sampleRate * 0.03);
-    clickBuf = actx.createBuffer(1, len, actx.sampleRate);
-    const d = clickBuf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
-  }
-  function playKey(kind) {
-    if (!prefs.sound) return;
-    ensureAudio();
-    const t = actx.currentTime;
-    const src = actx.createBufferSource(); src.buffer = clickBuf;
-    const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = kind === 'space' ? 700 : 1800 + Math.random() * 500; f.Q.value = 0.8;
-    const g = actx.createGain(); g.gain.value = kind === 'space' ? 0.5 : 0.35;
-    src.connect(f); f.connect(g); g.connect(actx.destination); src.start(t);
-    if (kind === 'enter') {
-      const o = actx.createOscillator(); const og = actx.createGain();
-      o.type = 'sine'; o.frequency.value = 2350;
-      og.gain.setValueAtTime(0.0001, t + 0.05); og.gain.exponentialRampToValueAtTime(0.12, t + 0.06); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
-      o.connect(og); og.connect(actx.destination); o.start(t + 0.05); o.stop(t + 0.95);
-    }
-  }
+  function hideChrome() { if (!anyPanelOpen() && !$('#topbar').contains(document.activeElement)) document.body.classList.add('idle'); }
 
   /* ============================ events ============================ */
   document.addEventListener('mousemove', showChrome);
@@ -1278,13 +1351,14 @@
     if (!ctrl && !e.altKey && (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace')) {
       hideChrome();
       document.body.classList.add('typing');
-      if (!reading && document.activeElement === editor) playKey(e.key === 'Enter' ? 'enter' : e.key === ' ' ? 'space' : 'key');
     }
     if (e.key === 'F11') { e.preventDefault(); window.api.toggleFullscreen(); return; }
+    if (e.key === 'F10') { e.preventDefault(); showChrome(); $('#btnChapters').focus(); return; } // the menu bar by keyboard
     if (e.key === 'F3' && !fb.hidden) { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); return; }
     if (e.key === 'Escape') {
       if (activeNote && !$('#notePop').hidden) { e.preventDefault(); closeNotePop(false); return; }
       if (!fb.hidden) { e.preventDefault(); closeFind(); return; }
+      if (!$('#fileDlg').hidden) return;
       if (!$('#modal').hidden) { $('#modal').hidden = true; return; }
       if (anyPanelOpen()) { e.preventDefault(); closePanels(); if (!reading) editor.focus(); }
       return;
@@ -1313,7 +1387,7 @@
       case 'o': e.preventDefault(); if (shift) toggle('#outline'); else doOpen(); break;
       case 'n': e.preventDefault(); doNew(); break;
       case 'e': e.preventDefault(); toggle('#exportMenu', '#btnExport'); break;
-      case 'r': e.preventDefault(); if (shift) setReview(!review); else setReading(!reading); break;
+      case 'r': e.preventDefault(); break; // swallowed: Ctrl+R must not reload the window
       case 'f': e.preventDefault(); openFind(false); break;
       case 'h': e.preventDefault(); openFind(true); break;
       case ',': e.preventDefault(); toggle('#settings', '#btnSettings', 'right'); break;
@@ -1417,7 +1491,15 @@
     e.preventDefault();
     if (reading) return;
     const text = (e.clipboardData.getData('text/plain') || '').replace(/\r\n?/g, '\n');
-    text.split('\n').forEach((line, i) => {
+    const lines = text.split('\n');
+    if (lines.length > 40) {
+      // big pastes in one step: a paragraph at a time is far too slow (thousands of layouts)
+      const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      document.execCommand('insertHTML', false, lines.map((l) => '<p>' + (l ? esc(l) : '<br>') + '</p>').join(''));
+      cleanBlocks();
+      return;
+    }
+    lines.forEach((line, i) => {
       if (i) document.execCommand('insertParagraph');
       if (line) document.execCommand('insertText', false, line);
     });
@@ -1467,13 +1549,43 @@
   window.api.onUpdateReady((v) => toast('Version ' + (v || '') + ' is ready. It installs when you close Quire.'));
   $('#fmtToggle').addEventListener('mousedown', (e) => e.preventDefault());
   $('#fmtToggle').addEventListener('click', () => savePrefs({ fmtbar: prefs.fmtbar === false }));
-  $('#btnMoreSettings').addEventListener('click', () => {
-    const more = $('#settingsMore');
-    more.hidden = !more.hidden;
-    $('#btnMoreSettings').innerHTML = more.hidden ? 'More settings &#9662;' : 'Fewer settings &#9652;';
-    $('#btnMoreSettings').setAttribute('aria-expanded', String(!more.hidden));
-    placePopover($('#settings'), $('#btnSettings'), 'right');
+  // keyboard: the top bar opens with F10 or when it gets focus; the Mode menu works with the arrow keys
+  $('#topbar').addEventListener('focusin', showChrome);
+  $('#topbar').addEventListener('keydown', (e) => {
+    const wrap = $('#modeWrap'), items = $$('#modeMenu [data-mode]');
+    const inMenu = e.target.closest && e.target.closest('#modeMenu');
+    if (e.key === 'Escape') {
+      if (wrap.classList.contains('open') || inMenu) { e.preventDefault(); e.stopPropagation(); wrap.classList.remove('open'); $('#btnMode').setAttribute('aria-expanded', 'false'); $('#btnMode').focus(); }
+      else { e.stopPropagation(); if (document.activeElement) document.activeElement.blur(); if (!reading) editor.focus(); }
+      return;
+    }
+    if (e.target.id === 'btnMode' && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault(); wrap.classList.add('open'); $('#btnMode').setAttribute('aria-expanded', 'true');
+      (items.find((b) => b.classList.contains('on')) || items[0]).focus(); return;
+    }
+    if (inMenu && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      const i = items.indexOf(document.activeElement);
+      items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+    }
   });
+  // settings: Tab stays inside the page (even if the focus had slipped back to the text)
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab' || $('#settings').hidden) return;
+    const f = [...$('#settings').querySelectorAll('button:not(:disabled),input:not(:disabled),select')].filter((x) => x.offsetParent);
+    if (!f.length) return;
+    const i = f.indexOf(document.activeElement);
+    if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && (i === f.length - 1 || i < 0)) { e.preventDefault(); f[0].focus(); }
+  });
+  // settings page: sections on the left
+  $$('.st-nav button').forEach((b) => b.addEventListener('click', () => {
+    $$('.st-nav button').forEach((x) => x.classList.toggle('on', x === b));
+    $$('#settings [data-secpane]').forEach((p) => { p.hidden = p.dataset.secpane !== b.dataset.sec; });
+  }));
+  $('#readBack').addEventListener('click', () => setMode('write'));
+  $('#settingsClose').addEventListener('click', () => { closePanels(); if (!reading) editor.focus(); });
+  $('#settings').addEventListener('mousedown', (e) => { if (e.target === $('#settings')) { closePanels(); if (!reading) editor.focus(); } });
   $('#docTitle').addEventListener('input', (e) => { doc.title = e.target.value; markDirty(); updateFileHint(); });
   $('#outlineClose').addEventListener('click', closeOutline);
   $('#addChapter').addEventListener('click', addChapter);
@@ -1492,7 +1604,7 @@
   document.addEventListener('mousedown', (e) => {
     if (!$('#notePop').hidden && !e.target.closest('#notePop') && !e.target.closest('.gcard') && !e.target.closest('.nmark')) closeNotePop(true);
     if (!e.target.closest('.popover') && !e.target.closest('#topbar') && !e.target.closest('#outline')) {
-      $('#exportMenu').hidden = true; $('#settings').hidden = true;
+      $('#exportMenu').hidden = true;
     }
   });
 
@@ -1510,9 +1622,31 @@
       el.addEventListener('pointerdown', on);
       window.addEventListener('pointerup', off); window.addEventListener('pointercancel', off);
       el.addEventListener('keydown', (e) => { if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') { on(); clearTimeout(t); t = setTimeout(off, 900); } });
-      el.addEventListener('blur', off);
+      window.addEventListener('mouseup', off); el.addEventListener('lostpointercapture', off);
     }
     else if (el.type === 'number') el.addEventListener('change', () => savePrefs({ [k]: Math.max(0, +el.value || 0) }));
+  });
+  $$('[data-num]').forEach((el) => {
+    const k = el.dataset.num;
+    const commit = () => {
+      const mn = +el.min, mx = +el.max;
+      let v = Math.round(+el.value);
+      if (!isFinite(v) || el.value === '') v = prefs[k];
+      v = Math.min(mx, Math.max(mn, v));
+      el.value = v;
+      savePrefs({ [k]: v });
+    };
+    el.addEventListener('change', commit);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); el.select(); } });
+    el.addEventListener('focus', () => el.select());
+  });
+  $$('[data-reset]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.reset; savePrefs({ [k]: DEFAULTS[k] }); }));
+  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'weight', 'size', 'measure', 'anchor', 'typewriter', 'centerMode', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'autoUpdate'];
+  $('#resetAll').addEventListener('click', () => {
+    const patch = {};
+    RESETTABLE.forEach((k) => { if (DEFAULTS[k] !== undefined) patch[k] = DEFAULTS[k]; });
+    savePrefs(patch);
+    toast('Settings back to their defaults');
   });
 
   // From the main process
@@ -1524,6 +1658,7 @@
 
   /* ============================ start ============================ */
   applyPrefs();
+  updateModeUI();
   (function start() {
     if (init.open && !init.open.error) {
       try {
