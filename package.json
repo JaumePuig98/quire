@@ -1,7 +1,7 @@
 {
   "name": "quire",
   "productName": "Quire",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "A distraction-free, typewriter-style writing app for books",
   "main": "main.js",
   "author": "Jaume Puig Costa-Jussà",
@@ -21,6 +21,7 @@
       "main.js",
       "preload.js",
       "exporters.js",
+      "docx-import.js",
       "shared/**/*",
       "renderer/**/*",
       "exporter-fonts/**/*",
@@ -73,7 +74,9 @@
   },
   "dependencies": {
     "docx": "^9.16.0",
-    "electron-updater": "^6.8.11"
+    "electron-updater": "^6.8.11",
+    "mammoth": "^1.13.0",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "electron": "^45.4.1",

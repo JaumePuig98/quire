@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const on = (channel, cb) => {
   const h = (e, ...a) => cb(...a);
@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('api', {
   fsMkdir: (a) => ipcRenderer.invoke('fs:mkdir', a),
   fsExists: (p) => ipcRenderer.invoke('fs:exists', p),
   fsRemember: (a) => ipcRenderer.send('fs:remember', a),
+  pathForFile: (f) => { try { return webUtils.getPathForFile(f); } catch (e) { return ''; } },
   openPath: (p) => ipcRenderer.invoke('doc:open-path', p),
   save: (args) => ipcRenderer.invoke('doc:save', args),
   docChanged: (p) => ipcRenderer.invoke('doc:changed', p),
@@ -33,6 +34,8 @@ contextBridge.exposeInMainWorld('api', {
   spellInfo: () => ipcRenderer.invoke('spell:info'),
   spellSet: (l) => ipcRenderer.invoke('spell:set', l),
   versionsList: (p) => ipcRenderer.invoke('versions:list', p),
+  versionsSave: (a) => ipcRenderer.invoke('versions:save', a),
+  versionsDelete: (f) => ipcRenderer.invoke('versions:delete', f),
   versionsRead: (f) => ipcRenderer.invoke('versions:read', f),
   onSystemTheme: (cb) => on('theme:system', cb),
   onFlush: (cb) => on('app:flush', cb),

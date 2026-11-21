@@ -5,7 +5,7 @@ const { pathToFileURL } = require('url');
 const D = require('./shared/doc.js');
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
-  CommentRangeStart, CommentRangeEnd, CommentReference,
+  Footer, PageNumber, CommentRangeStart, CommentRangeEnd, CommentReference,
 } = require('docx');
 
 const A4 = { width: 11906, height: 16838 };
@@ -19,6 +19,7 @@ const FONTS = {
 
 /* ---------------------------- Word ---------------------------- */
 async function toDocx(doc, opts) {
+  doc = D.forExport(doc, opts || {});
   opts = opts || {};
   const font = (FONTS[opts.font] || FONTS.serif).word;
   const plan = D.headingPlan(doc);
@@ -62,24 +63,38 @@ async function toDocx(doc, opts) {
     return out;
   }
 
-  const children = [];
-  doc.chapters.forEach((c, ci) => {
-    if (plan.chapterHeadings) {
-      children.push(new Paragraph({
-        heading: HeadingLevel.HEADING_1,
-        pageBreakBefore: ci > 0,
-        children: [new TextRun(c.title.trim() || 'Untitled chapter')],
-      }));
-    }
+  // The title page has no number and is not counted; every chapter is a section of its own, and a chapter can hide its number
+  // (its pages are still counted).
+  const titleKids = [];
+  const titlePage = !!(opts.titlePage && (doc.title || '').trim());
+  if (titlePage) {
+    titleKids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 4200, after: 360 }, children: [new TextRun({ text: doc.title.trim(), bold: true, size: 60 })] }));
+    if (doc.subtitle) titleKids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 360 }, children: [new TextRun({ text: doc.subtitle.trim(), italics: true, size: 34 })] }));
+    if (opts.author) titleKids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [new TextRun({ text: opts.author, size: 28 })] }));
+    if (doc.extra) titleKids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 240 }, children: [new TextRun({ text: doc.extra.trim(), size: 22, color: '555555' })] }));
+  }
+  const bodySections = [];
+  doc.chapters.forEach((c) => {
+    const kids = [];
+    if (plan.chapterHeadings) kids.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(c.title.trim() || 'Untitled chapter')] }));
     for (const b of c.blocks) {
       if (!D.blockText(b).trim()) continue;
       const lvl = D.blockLevel(b, plan.shift);
-      if (lvl) children.push(new Paragraph({ heading: heading(lvl), children: runsFor(b) }));
-      else if (b.t === 'quote') children.push(new Paragraph({ style: 'Quote', alignment: AlignmentType.RIGHT, children: runsFor(b) }));
-      else children.push(new Paragraph({ alignment: opts.justify === false ? undefined : AlignmentType.JUSTIFIED, children: runsFor(b) }));
+      if (lvl) kids.push(new Paragraph({ heading: heading(lvl), children: runsFor(b) }));
+      else if (b.t === 'quote') kids.push(new Paragraph({ style: 'Quote', alignment: AlignmentType.RIGHT, children: runsFor(b) }));
+      else kids.push(new Paragraph({ alignment: opts.justify === false ? undefined : AlignmentType.JUSTIFIED, children: runsFor(b) }));
     }
+    bodySections.push({ show: opts.pageNumbers !== false && !c.nonum, kids: kids.length ? kids : [new Paragraph({ children: [] })] });
   });
-  if (!children.length) children.push(new Paragraph({ children: [] }));
+  const footerFor = (show) => new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: show ? [new TextRun({ children: [PageNumber.CURRENT], size: 18, color: '666666' })] : [] })] });
+  const pageProps = (extra) => ({ page: Object.assign({ size: A4, margin: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } }, extra || {}) });
+  const sections = [];
+  if (titlePage) sections.push({ properties: pageProps(), footers: { default: footerFor(false) }, children: titleKids });
+  bodySections.forEach((sec, i) => sections.push({
+    properties: pageProps(i === 0 && titlePage ? { pageNumbers: { start: 1 } } : null),
+    footers: { default: footerFor(sec.show) },
+    children: sec.kids,
+  }));
 
   const hd = (id, name, size, before, after) => ({
     id, name, basedOn: 'Normal', next: 'Normal', quickFormat: true,
@@ -117,10 +132,7 @@ async function toDocx(doc, opts) {
         },
       ],
     },
-    sections: [{
-      properties: { page: { size: A4, margin: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } } },
-      children,
-    }],
+    sections,
   });
   return Packer.toBuffer(document);
 }
@@ -130,6 +142,7 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 function toHtml(doc, opts) {
   opts = opts || {};
+  doc = D.forExport(doc, opts);
   const fontsDir = opts.fontsDir;
   const f = FONTS[opts.font] || FONTS.serif;
   const plan = D.headingPlan(doc);
@@ -154,8 +167,12 @@ function toHtml(doc, opts) {
   }
 
   let body = '';
+  const titlePage = !!(opts.titlePage && (doc.title || '').trim());
+  const part = opts.part; // 'title' or 'body': the title page is printed on its own so the numbering does not count it
+  if (titlePage && part !== 'body') body += '<section class="titlepage"><h1 class="booktitle">' + esc(doc.title.trim()) + '</h1>' + (doc.subtitle ? '<p class="subtitle">' + esc(doc.subtitle.trim()) + '</p>' : '') + (opts.author ? '<p class="byline">' + esc(opts.author) + '</p>' : '') + (doc.extra ? '<p class="extra">' + esc(doc.extra.trim()) + '</p>' : '') + '</section>';
   doc.chapters.forEach((c, ci) => {
-    body += '<section class="chapter' + (ci > 0 ? ' newpage' : '') + '">';
+    if (part === 'title') return;
+    body += '<section class="chapter' + (ci > 0 ? ' newpage' : '') + (opts.pageNumbers === false || c.nonum ? ' nonum' : '') + '">';
     if (plan.chapterHeadings) body += '<h1>' + esc(c.title.trim() || 'Untitled chapter') + '</h1>';
     for (const b of c.blocks) {
       if (!D.blockText(b).trim()) continue;
@@ -166,7 +183,7 @@ function toHtml(doc, opts) {
     }
     body += '</section>';
   });
-  if (notes.length) {
+  if (notes.length && part !== 'title') {
     body += '<section class="chapter newpage notes"><h2>Notes</h2><ol>' +
       notes.map((n) => '<li>' + esc(n.text) + '</li>').join('') + '</ol></section>';
   }
@@ -186,7 +203,8 @@ function toHtml(doc, opts) {
     face2('Courier Prime', 'courier-prime-latin-700-normal.woff2', 700, 'normal') + face2('Courier Prime', 'courier-prime-latin-700-italic.woff2', 700, 'italic');
 
   return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(doc.title || 'Document') + '</title><style>\n' + fontCss +
-    '@page{size:A4;margin:25mm}\n' +
+    (opts.pageNumbers === false || part === 'title' ? '@page{size:A4;margin:25mm}\n' : '@page{size:A4;margin:25mm;@bottom-center{content:counter(page);font:9pt Arial,sans-serif;color:#666}}\n') +
+    '@page nonum{@bottom-center{content:none}}\n.nonum{page:nonum}\n' +
     'html{font-family:' + f.css + ';font-size:11.5pt;line-height:1.55;color:#111}\n' +
     'body{margin:0;orphans:3;widows:3;hyphens:manual}\n' +
     'p{margin:0 0 .75em;orphans:3;widows:3' + (opts.justify === false ? '' : ';text-align:justify') + '}\n' +
@@ -198,6 +216,8 @@ function toHtml(doc, opts) {
     'blockquote{margin:0 0 .2em 38%;padding:0;font-size:.92em;font-style:italic;text-align:right;break-inside:avoid;page-break-inside:avoid}\n' +
     'blockquote.cite{font-style:normal;text-align:right}\n' +
     ':not(blockquote)+blockquote,blockquote+:not(blockquote){margin-top:1em}\n' +
+    '.titlepage{display:flex;flex-direction:column;justify-content:center;height:240mm;text-align:center}\n' +
+    '  .booktitle{font-size:32pt;margin:0 0 .4em}.subtitle{font-size:17pt;font-style:italic;text-align:center;margin:0 0 2.2em}.byline{font-size:14pt;text-align:center;margin:0 0 .8em}.extra{font-size:11pt;color:#555;text-align:center}\n' +
     '.newpage{break-before:page;page-break-before:always}\n' +
     '.nref{font-size:.7em;line-height:0;color:#555}\n' +
     '.notes ol{padding-left:1.4em}.notes li{margin:0 0 .5em;break-inside:avoid}\n' +
@@ -207,26 +227,33 @@ function toHtml(doc, opts) {
 /* Renders the document to an A4 PDF using a hidden window (needs Electron). */
 async function renderPdf(doc, opts, fontsDir) {
   const { BrowserWindow } = require('electron');
-  const fs = require('fs');
   const os = require('os');
-  const html = toHtml(doc, Object.assign({}, opts, { fontsDir }));
-  const tmp = path.join(os.tmpdir(), 'writing-app-print-' + process.pid + '-' + Date.now() + '.html');
-  fs.writeFileSync(tmp, html);
   const pw = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  // one hidden window prints every part, one after the other
+  const printHtml = async (html) => {
+    const tmp = path.join(os.tmpdir(), 'writing-app-print-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7) + '.html');
+    fs.writeFileSync(tmp, html);
+    try {
+      await pw.loadFile(tmp);
+      await pw.webContents.executeJavaScript('document.fonts.ready.then(function(){return true})');
+      return await pw.webContents.printToPDF({ preferCSSPageSize: true, printBackground: false }); // page numbers come from the page's own CSS
+    } finally { fs.unlink(tmp, () => {}); }
+  };
   try {
-    await pw.loadFile(tmp);
-    await pw.webContents.executeJavaScript('document.fonts.ready.then(function(){return true})');
-    return await pw.webContents.printToPDF({
-      preferCSSPageSize: true,
-      printBackground: false,
-      displayHeaderFooter: true,
-      headerTemplate: '<span></span>',
-      footerTemplate: '<div style="width:100%;text-align:center;font-size:9px;font-family:Arial,sans-serif;color:#666"><span class="pageNumber"></span></div>',
-    });
-  } finally {
-    pw.destroy();
-    fs.unlink(tmp, () => {});
-  }
+    const o = Object.assign({}, opts, { fontsDir });
+    const withTitle = !!(opts && opts.titlePage && (doc.title || '').trim());
+    if (!withTitle) return await printHtml(toHtml(doc, o));
+    // title page and body are printed separately and joined, so the first chapter page is page 1
+    const { PDFDocument } = require('pdf-lib');
+    const a = await printHtml(toHtml(doc, Object.assign({}, o, { part: 'title' })));
+    const b = await printHtml(toHtml(doc, Object.assign({}, o, { part: 'body' })));
+    const out = await PDFDocument.create();
+    for (const buf of [a, b]) {
+      const src = await PDFDocument.load(buf);
+      (await out.copyPages(src, src.getPageIndices())).forEach((pg) => out.addPage(pg));
+    }
+    return Buffer.from(await out.save());
+  } finally { pw.destroy(); }
 }
 
 module.exports = { toDocx, toHtml, renderPdf, FONTS };

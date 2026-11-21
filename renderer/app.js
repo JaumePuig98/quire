@@ -39,7 +39,9 @@
   }
   const baseName = (p) => (p ? p.split(/[\\/]/).pop() : 'Untitled');
   const stem = (p) => baseName(p).replace(/\.[^.]+$/, '');
-  const todayKey = () => new Date().toISOString().slice(0, 10);
+  // the local calendar day (not UTC: in Toronto the UTC day changes at 7 pm)
+  const dayKey = (offset) => { const d = new Date(); d.setDate(d.getDate() + (offset || 0)); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  const todayKey = () => dayKey(0);
 
   /* ============================ preferences ============================ */
   // Accent colors: caret, note underline, selection and the soft light. [light theme, dark theme, light glow, dark glow]
@@ -92,6 +94,12 @@
     $$('[data-pref=weight],[data-num=weight]').forEach((el) => { el.disabled = oneWeight; });
     const wrow = $('[data-pref=weight]'); if (wrow) { const rw = wrow.closest('.row'); rw.classList.toggle('disabled', oneWeight); rw.title = oneWeight ? 'The Typewriter font has one weight' : ''; }
     root.style.setProperty('--measure', prefs.measure + 'px');
+    root.style.setProperty('--lh', String(prefs.lineHeight || DEFAULTS.lineHeight || 1.7));
+    root.style.setProperty('--pg', (prefs.paraGap != null ? prefs.paraGap : 0.6) + 'em');
+    root.style.setProperty('--indent', (prefs.indent || 0) + 'em');
+    root.style.setProperty('--hb', (prefs.headBefore != null ? prefs.headBefore : 0.9) + 'em');
+    root.style.setProperty('--ha', (prefs.headAfter != null ? prefs.headAfter : 0.4) + 'em');
+    root.style.setProperty('--qg', (prefs.quoteGap != null ? prefs.quoteGap : 0.9) + 'em');
     root.style.setProperty('--anchor', prefs.anchor);
     document.body.classList.toggle('nofade', !prefs.fade);
     document.body.classList.toggle('noglow', !prefs.glow);
@@ -104,8 +112,11 @@
       else if (document.activeElement !== el) el.value = prefs[k];
     });
     $$('[data-num]').forEach((el) => { if (document.activeElement !== el) el.value = prefs[el.dataset.num]; });
+    const stn = $('#streakNote');
+    if (stn) { const st = prefs.streak || {}; stn.textContent = prefs.goal > 0 ? 'Streak: ' + streakNow() + (streakNow() === 1 ? ' day' : ' days') + ' in a row' + (st.best > 1 ? ' (best ' + st.best + ')' : '') + '. A day counts when you reach the daily goal.' : 'Set a daily goal to start a streak.'; }
     $$('[data-reset]').forEach((b) => { b.classList.toggle('show', DEFAULTS[b.dataset.reset] !== undefined && prefs[b.dataset.reset] !== DEFAULTS[b.dataset.reset]); });
     kick(false);
+    applyFocus();
     if (reading) layoutGutter();
     updateStatus();
   }
@@ -239,6 +250,10 @@
     if (!reading) { editor.focus(); placeCaretAtEnd(); kick(true); }
     renderOutline();
     $('#docTitle').value = doc.title || '';
+    $('#docAuthor').value = doc.author || '';
+    $('#docSubtitle').value = doc.subtitle || '';
+    $('#docExtra').value = doc.extra || '';
+    exportSel = null;
     updateFileHint();
     updateTitle();
     updateStatus();
@@ -247,6 +262,7 @@
   }
   function parseByExtension(path, text) {
     if (/\.draft$/i.test(path)) return { doc: D.parseDraft(text), path };
+    if (/\.docx$/i.test(path)) return { doc: D.parseDraft(text), path: null, imported: true };
     return { doc: D.fromMarkdown(text, stem(path)), path: null, imported: true };
   }
   async function openResult(r) {
@@ -401,7 +417,7 @@
   async function doOpen() {
     if (!(await confirmDiscard())) return;
     if (filePath && dirty) await autosave();
-    const p = await pickFile({ mode: 'open', kind: 'doc', title: 'Open', exts: ['.draft', '.md', '.markdown', '.txt'], startDir: filePath ? dirOf(filePath) : '' });
+    const p = await pickFile({ mode: 'open', kind: 'doc', title: 'Open', exts: ['.draft', '.md', '.markdown', '.txt', '.docx'], startDir: filePath ? dirOf(filePath) : '' });
     if (p === null) return;
     await openResult(p === 'system' ? await window.api.openDialog() : await window.api.openPath(p));
   }
@@ -415,6 +431,20 @@
       if (g.base[key] === undefined) g.base[key] = totalWords();
       localStorage.setItem('goal', JSON.stringify(g));
     } catch (e) { /* ignore */ }
+  }
+  const sessionBase = {};
+  function sessionWords() { const k = filePath || 'untitled'; if (sessionBase[k] === undefined) sessionBase[k] = totalWords(); return Math.max(0, totalWords() - sessionBase[k]); }
+  // A day counts when the daily goal is reached; the streak is the run of such days in a row.
+  function recordGoalDay() {
+    const st = prefs.streak || { last: '', count: 0, best: 0 };
+    const today = todayKey();
+    if (st.last === today) return;
+    const count = st.last === dayKey(-1) ? st.count + 1 : 1;
+    savePrefs({ streak: { last: today, count, best: Math.max(st.best || 0, count) } });
+  }
+  function streakNow() {
+    const st = prefs.streak || { last: '', count: 0, best: 0 };
+    return st.last === todayKey() || st.last === dayKey(-1) ? st.count : 0;
   }
   function totalWords() { return wordCounts.reduce((a, b) => a + (b || 0), 0); }
   function wordsToday() {
@@ -442,7 +472,14 @@
     const w = wordCounts[cur] || 0;
     parts.push(w.toLocaleString() + (w === 1 ? ' word' : ' words'));
     if (multi) parts.push(totalWords().toLocaleString() + ' in total');
-    if (prefs.goal > 0) parts.push(wordsToday().toLocaleString() + ' / ' + prefs.goal.toLocaleString() + ' today');
+    if (prefs.showSession) parts.push('+' + sessionWords().toLocaleString() + ' this session');
+    if (prefs.goal > 0) {
+      const wt = wordsToday();
+      if (wt >= prefs.goal) recordGoalDay();
+      parts.push(wt.toLocaleString() + ' / ' + prefs.goal.toLocaleString() + ' today');
+      const sn = streakNow();
+      if (sn >= 2) parts.push(sn + ' day streak');
+    }
     $('#statusLeft').textContent = parts.join(' · ');
     updateBookTotal();
   }
@@ -516,6 +553,58 @@
       if (liveEl === el) { el.style.setProperty('--gt', '0px'); el.style.setProperty('--gb', '0px'); }
     }, 280);
   }
+  /* ---- focus: everything but the paragraph (or sentence) being written is dimmed ---- */
+  // Uses the CSS Custom Highlight API, so the text itself is never touched.
+  function offsetIn(block, node, off) {
+    let n = 0;
+    const w = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    while (w.nextNode()) { if (w.currentNode === node) return n + off; n += w.currentNode.nodeValue.length; }
+    return n;
+  }
+  function rangeAt(root, a, b) {
+    if (!(a < b)) return null;
+    const r = document.createRange();
+    let n = 0, s0 = false;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (w.nextNode()) {
+      const t = w.currentNode, len = t.nodeValue.length;
+      if (!s0 && a <= n + len) { r.setStart(t, a - n); s0 = true; }
+      if (s0 && b <= n + len) { r.setEnd(t, b - n); return r; }
+      n += len;
+    }
+    return null;
+  }
+  // the sentence around position pos in txt: [start, end)
+  function sentenceBounds(txt, pos) {
+    const re = /[.!?\u2026]+["'\u201d\u2019)\]]*(?=\s|$)/g;
+    let start = 0, end = txt.length, m;
+    while ((m = re.exec(txt))) {
+      const e = m.index + m[0].length;
+      if (e < pos) { const ws = /^\s*/.exec(txt.slice(e))[0].length; start = Math.min(pos, e + ws); }
+      else { end = e; break; }
+    }
+    return [start, Math.max(start, end)];
+  }
+  function applyFocus() {
+    if (!hasHL) return;
+    const mode = prefs.focus || 'off';
+    const sel = getSelection();
+    const blk = currentBlock();
+    if (mode === 'off' || reading || review || document.activeElement !== editor || !blk || !sel.rangeCount) { CSS.highlights.delete('focusdim'); return; }
+    const ranges = [];
+    const pre = document.createRange(); pre.setStart(editor, 0); pre.setEndBefore(blk); if (!pre.collapsed) ranges.push(pre);
+    const post = document.createRange(); post.setStartAfter(blk); post.setEnd(editor, editor.childNodes.length); if (!post.collapsed) ranges.push(post);
+    if (mode === 'sentence') {
+      const txt = (() => { let t = ''; const w = document.createTreeWalker(blk, NodeFilter.SHOW_TEXT); while (w.nextNode()) t += w.currentNode.nodeValue; return t; })();
+      const [a, b] = sentenceBounds(txt, offsetIn(blk, sel.anchorNode, sel.anchorOffset));
+      const roots = [blk];
+      if (liveEl === blk && textEl && textEl.firstElementChild) roots.push(textEl.firstElementChild); // the sliding copy of the line
+      for (const root of roots) for (const rg of [rangeAt(root, 0, a), rangeAt(root, b, txt.length)]) if (rg) ranges.push(rg);
+    }
+    CSS.highlights.set('focusdim', new Highlight(...ranges));
+  }
+  editor.addEventListener('blur', () => { if (hasHL) CSS.highlights.delete('focusdim'); });
+  editor.addEventListener('focus', () => applyFocus());
   function paintLine(r, lr, lh, top) {
     if (!wrapEl) {
       wrapEl = document.createElement('div'); wrapEl.className = 'lineWrap';
@@ -535,6 +624,7 @@
       c.classList.remove('live'); c.removeAttribute('style');
       textEl.replaceChildren(c);
       caretEl.style.animation = 'none'; void caretEl.offsetWidth; caretEl.style.animation = '';
+      if (prefs.focus === 'sentence') applyFocus();
     }
     textEl.style.setProperty('--bt', top + 'px');
     textEl.style.setProperty('--bb', (top + lh) + 'px');
@@ -862,7 +952,7 @@
     if (reading) layoutGutter(); else editor.focus();
   }
   // Margin marks: a small note icon at the right of the column, level with the first line of each annotated passage.
-  const NOTE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2.5h10v8.5l-3 3H3z"/><path d="M10 14v-3h3"/><path d="M5.5 6h5M5.5 8.5h3"/></svg>';
+  const NOTE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 3h9A1.5 1.5 0 0 1 14 4.5v5a1.5 1.5 0 0 1-1.5 1.5H8l-3 2.5V11H3.5A1.5 1.5 0 0 1 2 9.5v-5A1.5 1.5 0 0 1 3.5 3z"/></svg>';
   const marks = document.createElement('div');
   marks.id = 'noteMarks';
   page.appendChild(marks);
@@ -1070,6 +1160,7 @@
     const keep = find.idx;
     refreshFind(true);
     find.idx = Math.min(keep, find.ranges.length - 1);
+    renderFindList();
     fIn.focus();
     if (find.idx >= 0) goToMatch(find.idx);
   }
@@ -1094,10 +1185,56 @@
       }
       selectChapter(origin);
     }
-    refreshFind(false);
+    refreshFind(false); renderFindList();
     fIn.focus();
     toast(total ? 'Replaced ' + total + (total === 1 ? ' match' : ' matches') : 'No matches to replace');
   }
+  // every match in a list: the chapter, and a bit of the sentence around it. A click goes there.
+  function renderFindList() {
+    const ul = $('#findResults');
+    if (ul.hidden) return;
+    ul.innerHTML = '';
+    const re = findRegex();
+    if (!re) return;
+    syncFromDom();
+    const chapters = find.all ? doc.chapters.map((c, i) => i) : [cur];
+    let shown = 0, total = 0;
+    for (const i of chapters) {
+      let k = 0;
+      for (const b of doc.chapters[i].blocks) {
+        const text = D.blockText(b);
+        const r2 = new RegExp(re.source, re.flags);
+        let m;
+        while ((m = r2.exec(text))) {
+          if (m[0] === '') { r2.lastIndex++; continue; }
+          total++;
+          if (shown < 200) {
+            shown++;
+            const li = document.createElement('li'); li.tabIndex = 0;
+            const a = Math.max(0, m.index - 34), z = Math.min(text.length, m.index + m[0].length + 34);
+            const small = document.createElement('small'); small.textContent = doc.chapters.length > 1 ? (chapterName(doc.chapters[i]) || 'Chapter ' + (i + 1)) : '';
+            const mark = document.createElement('mark'); mark.textContent = m[0];
+            if (small.textContent) li.appendChild(small);
+            li.append((a > 0 ? '\u2026' : '') + text.slice(a, m.index), mark, text.slice(m.index + m[0].length, z) + (z < text.length ? '\u2026' : ''));
+            const ci = i, kk = k;
+            const go = () => { if (ci !== cur) { selectChapter(ci); find.anchor = null; } refreshFind(false); goToMatch(kk); if (!reading) fIn.focus(); };
+            li.addEventListener('click', go);
+            li.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+            ul.appendChild(li);
+          }
+          k++;
+        }
+      }
+    }
+    if (total > shown) { const li = document.createElement('li'); li.className = 'more'; li.textContent = (total - shown) + ' more not listed'; ul.appendChild(li); }
+    if (!total) { const li = document.createElement('li'); li.className = 'more'; li.textContent = 'No matches'; ul.appendChild(li); }
+  }
+  $('#findList').addEventListener('click', () => {
+    const ul = $('#findResults');
+    ul.hidden = !ul.hidden;
+    $('#findList').setAttribute('aria-pressed', String(!ul.hidden));
+    renderFindList();
+  });
   function openFind(focusReplace) {
     closePanels();
     const sel = getSelection();
@@ -1120,7 +1257,7 @@
   }
   let findTimer = 0;
   function refreshFindSoon() { if (fb.hidden) return; clearTimeout(findTimer); findTimer = setTimeout(() => refreshFind(true), 250); }
-  fIn.addEventListener('input', () => { find.anchor = null; refreshFind(false); });
+  fIn.addEventListener('input', () => { find.anchor = null; refreshFind(false); renderFindList(); });
   fIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); } });
   rIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); replaceOne(); } });
   $('#findNext').addEventListener('click', () => stepFind(1));
@@ -1128,8 +1265,8 @@
   $('#findClose').addEventListener('click', closeFind);
   $('#replaceOne').addEventListener('click', replaceOne);
   $('#replaceAll').addEventListener('click', replaceAll);
-  $('#findCase').addEventListener('click', () => { find.matchCase = !find.matchCase; $('#findCase').setAttribute('aria-pressed', String(find.matchCase)); refreshFind(false); });
-  $('#findAllChapters').addEventListener('change', (e) => { find.all = e.target.checked; updateFindCount(); });
+  $('#findCase').addEventListener('click', () => { find.matchCase = !find.matchCase; $('#findCase').setAttribute('aria-pressed', String(find.matchCase)); refreshFind(false); renderFindList(); });
+  $('#findAllChapters').addEventListener('change', (e) => { find.all = e.target.checked; updateFindCount(); renderFindList(); });
 
   /* ============================ reading mode ============================ */
   function updateModeUI() {
@@ -1203,14 +1340,58 @@
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); closeOutline(); } });
       const wc = document.createElement('span'); wc.className = 'wc'; wc.textContent = (wordCounts[i] || 0).toLocaleString();
       const mk = (label, title, fn, dis) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.disabled = !!dis; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b; };
-      li.append(num, inp, wc,
+      const nb = mk('#', c.nonum ? 'Page numbers are hidden on this chapter. Click to show them.' : 'Page numbers are shown on this chapter. Click to hide them (the pages are still counted).', () => { c.nonum = !c.nonum; if (!c.nonum) delete c.nonum; markDirty(); renderOutline(); });
+      nb.className = 'pn' + (c.nonum ? ' off' : ''); nb.setAttribute('aria-pressed', String(!c.nonum)); nb.setAttribute('aria-label', 'Page numbers on chapter ' + (i + 1));
+      li.append(num, inp, wc, nb,
         mk('Up', 'Move up', () => moveChapter(i, -1), i === 0),
         mk('Down', 'Move down', () => moveChapter(i, 1), i === doc.chapters.length - 1),
         mk('Del', 'Delete chapter', () => deleteChapter(i), doc.chapters.length < 2));
       li.addEventListener('click', (e) => { if (e.target === li || e.target === num || e.target === wc) selectChapter(i); });
+      // a table of contents of the chapter: its headings, a click goes there
+      const heads = [];
+      let first = true;
+      for (const b of c.blocks) {
+        const t = D.blockText(b).trim();
+        if (!t) continue;
+        const nameLine = first && !c.title.trim() && b.t === 'h1'; // this heading already is the chapter's name
+        first = false;
+        if ((b.t === 'h1' || b.t === 'h2') && !nameLine) heads.push({ t, level: b.t });
+      }
+      if (heads.length) {
+        const toc = document.createElement('ul'); toc.className = 'toc';
+        heads.forEach((h, k) => {
+          const hi = document.createElement('li');
+          const hb = document.createElement('button'); hb.type = 'button'; hb.className = 'lv-' + h.level; hb.textContent = h.t; hb.title = h.t;
+          hb.addEventListener('click', (e) => { e.stopPropagation(); goToHeading(i, c, k); });
+          hi.appendChild(hb); toc.appendChild(hi);
+        });
+        li.appendChild(toc);
+      }
       ol.appendChild(li);
     });
     updateBookTotal();
+  }
+  // Open a chapter and put the caret in the heading that is the k-th one listed in its table of contents
+  function goToHeading(i, c, k) {
+    if (i !== cur) selectChapter(i);
+    let kids = [...editor.children];
+    if (readingBook()) { // the whole book is on the page: only this chapter's part
+      const seps = kids.map((e, ix) => (e.classList.contains('chapsep') ? ix : -1)).filter((x) => x >= 0);
+      kids = kids.slice(seps[i] !== undefined ? seps[i] : 0, seps[i + 1] !== undefined ? seps[i + 1] : kids.length);
+    }
+    kids = kids.filter((e) => e.textContent.trim() && !e.classList.contains('chapsep'));
+    // the chapter's own name line is not listed, so skip it when counting
+    if (!c.title.trim() && kids[0] && kids[0].tagName === 'H1') kids.shift();
+    const h = kids.filter((e) => /^H[12]$/.test(e.tagName))[k];
+    closeOutline();
+    if (!h) return;
+    if (!reading) {
+      const r = document.createRange(); r.selectNodeContents(h); r.collapse(false);
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }
+    const rect = h.getBoundingClientRect();
+    scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + rect.top - innerHeight * (prefs.anchor || 68) / 100 * 0.6), behavior: 'smooth' });
+    kick(true);
   }
   function updateBookTotal() {
     const el = $('#bookTotal');
@@ -1254,6 +1435,40 @@
   function closeOutline() { $('#outline').hidden = true; if (!reading) { editor.focus(); } }
 
   /* ============================ export / history ============================ */
+  // Which chapters go into an export: all of them unless the person unticks some (null = all)
+  let exportSel = null;
+  const autoTitlePage = () => !!(doc && doc.chapters.length > 1 && (doc.title || '').trim());
+  const wantTitlePage = () => (prefs.titlePage == null ? autoTitlePage() : !!prefs.titlePage);
+  function renderExportChapters() {
+    $('#exportTitlePage').checked = wantTitlePage();
+    const box = $('#exportChapters'), list = $('#exportChapterList'), btn = $('#exportChaptersBtn');
+    if (!doc || doc.chapters.length < 2) { box.hidden = true; return; }
+    syncFromDom();
+    box.hidden = false;
+    const sel = exportSel || new Set(doc.chapters.map((c) => c.id));
+    list.innerHTML = '';
+    doc.chapters.forEach((c, i) => {
+      const l = document.createElement('label');
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.has(c.id); cb.dataset.id = c.id;
+      cb.addEventListener('change', () => {
+        const ids = $$('#exportChapterList input').filter((x) => x.checked).map((x) => x.dataset.id);
+        exportSel = ids.length === doc.chapters.length ? null : new Set(ids);
+        updateExportBtn();
+      });
+      l.append(cb, document.createTextNode(' ' + (chapterName(c) || 'Chapter ' + (i + 1))));
+      list.appendChild(l);
+    });
+    updateExportBtn();
+  }
+  function updateExportBtn() {
+    const n = exportSel ? exportSel.size : doc.chapters.length;
+    $('#exportChaptersBtn').textContent = 'Chapters: ' + (n === doc.chapters.length ? 'all' : n + ' of ' + doc.chapters.length);
+  }
+  $('#exportChaptersBtn').addEventListener('click', () => {
+    const l = $('#exportChapterList'); l.hidden = !l.hidden;
+    $('#exportChaptersBtn').setAttribute('aria-expanded', String(!l.hidden));
+    placePopover($('#exportMenu'), $('#btnExport'));
+  });
   async function doExport(format) {
     $('#exportMenu').hidden = true;
     snapshotDoc();
@@ -1264,12 +1479,24 @@
     toast('Preparing ' + format.toUpperCase() + '…');
     const r = await window.api.exportDoc({
       format, doc, suggested: docTitle(), path: chosen === 'system' ? undefined : chosen,
-      opts: { notes: $('#exportNotes').checked, font: prefs.font, justify: prefs.justify !== false, author: doc.author || undefined },
+      opts: { notes: $('#exportNotes').checked, font: prefs.font, justify: prefs.justify !== false, author: doc.author || undefined, titlePage: wantTitlePage(), pageNumbers: prefs.pageNumbers !== false, chapterIds: exportSel ? [...exportSel] : undefined },
     });
     if (r && r.error) await window.api.error('Export failed: ' + r.error);
     else if (r && r.path) toast('Exported to ' + baseName(r.path));
     if (!reading) editor.focus();
   }
+  async function saveNamedVersion() {
+    const name = $('#versionName').value.trim();
+    if (!name || !filePath) { $('#versionName').focus(); return; }
+    await autosave();
+    const ok = await window.api.versionsSave({ id: doc.id, text: D.serializeDraft(snapshotDoc()), name });
+    if (!ok) { await window.api.error('Could not save the version.'); return; }
+    $('#versionName').value = '';
+    toast('Version saved: ' + name);
+    openVersions();
+  }
+  $('#versionSaveBtn').addEventListener('click', saveNamedVersion);
+  $('#versionName').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveNamedVersion(); } });
   async function openVersions() {
     closePanels();
     const list = $('#versionList');
@@ -1278,13 +1505,15 @@
     else {
       await autosave();
       const items = await window.api.versionsList(doc.id);
-      if (!items.length) list.innerHTML = '<li class="small">No earlier versions yet. A snapshot is taken every few minutes while you write, and before a save that removes a lot of text.</li>';
+      if (!items.length) list.innerHTML = '<li class="small">No earlier versions yet. A snapshot is taken every few minutes while you write, and before a save that removes a lot of text. Name one above to keep it for good.</li>';
       for (const it of items) {
         const li = document.createElement('li');
+        if (it.name) li.className = 'named';
         const b = document.createElement('button');
         b.type = 'button';
-        b.innerHTML = '<span></span><span class="hint">Open as new document</span>';
-        b.firstChild.textContent = new Date(it.time).toLocaleString();
+        b.innerHTML = '<span><span class="vname"></span></span><span class="hint">Open as new document</span>';
+        b.firstChild.firstChild.textContent = it.name ? it.name + '  ' : '';
+        b.firstChild.append(document.createTextNode(new Date(it.time).toLocaleString()));
         b.addEventListener('click', async () => {
           const text = await window.api.versionsRead(it.file);
           try {
@@ -1296,9 +1525,19 @@
           } catch (e) { window.api.error(e.message); }
         });
         li.appendChild(b);
+        if (it.name) {
+          const x = document.createElement('button');
+          x.type = 'button'; x.className = 'vdel'; x.textContent = 'Delete'; x.setAttribute('aria-label', 'Delete the version ' + it.name);
+          x.addEventListener('click', async () => {
+            const c = await window.api.confirm({ message: 'Delete the version "' + it.name + '"?', detail: 'This cannot be undone.', buttons: ['Delete', 'Cancel'] });
+            if (c === 0) { await window.api.versionsDelete(it.file); openVersions(); }
+          });
+          li.appendChild(x);
+        }
         list.appendChild(li);
       }
     }
+    $('#versionSave').hidden = !filePath;
     $('#modal').hidden = false;
   }
 
@@ -1326,7 +1565,7 @@
       showChrome();
       if (btnSel && sel !== '#settings') placePopover($(sel), $(btnSel), align);
       if (sel === '#settings') { const f = $('#settings .st-nav button.on'); if (f) f.focus({ preventScroll: true }); }
-      else if (sel === '#exportMenu') { const f = $(sel).querySelector('button,input,select'); if (f) f.focus({ preventScroll: true }); }
+      else if (sel === '#exportMenu') { renderExportChapters(); const f = $(sel).querySelector('button,input,select'); if (f) f.focus({ preventScroll: true }); }
     } else if (!reading) editor.focus();
   }
 
@@ -1370,8 +1609,9 @@
     }
     if (!ctrl) return;
     if (e.altKey) {
-      if (k === 'm') { e.preventDefault(); addNote(); }
-      else if (k === 's') { e.preventDefault(); save('as'); }
+      // by physical key: on a Spanish layout Ctrl+Alt is AltGr and the letter may come out changed
+      if (e.code === 'KeyM') { e.preventDefault(); addNote(); }
+      else if (e.code === 'KeyS') { e.preventDefault(); save('as'); }
       return;
     }
     const shift = e.shiftKey;
@@ -1485,11 +1725,74 @@
   });
   document.addEventListener('selectionchange', () => {
     if (liveEl && (!editor.contains(liveEl) || currentBlock() !== liveEl)) setLive(null);
-    updateActive(); kick(false);
+    updateActive(); kick(false); applyFocus();
   });
+  // Pasted formatted text keeps only what the page itself has: bold, italic, underline, headings and quotes.
+  // Returns HTML to insert, or '' when the clipboard holds nothing but plain text (then the plain path is used).
+  let plainPaste = false; // Ctrl+Shift+V
+  function cleanPasteHtml(html) {
+    const dom = new DOMParser().parseFromString(html, 'text/html');
+    const SKIP = new Set(['script', 'style', 'head', 'meta', 'title', 'img', 'svg', 'noscript', 'link', 'object', 'iframe', 'button', 'input', 'select', 'textarea']);
+    const BLOCK = { p: 'p', div: 'p', li: 'p', tr: 'p', h1: 'h1', h2: 'h2', h3: 'h2', h4: 'h2', h5: 'h2', h6: 'h2', blockquote: 'quote' };
+    const blocks = [];
+    let cur = null, fancy = false;
+    const start = (t) => { cur = { t, html: '', text: '' }; blocks.push(cur); };
+    const wrapRun = (text, f) => { let h = esc(text); if (f.u) h = '<u>' + h + '</u>'; if (f.i) h = '<i>' + h + '</i>'; if (f.b) h = '<b>' + h + '</b>'; return h; };
+    const walk = (node, f) => {
+      if (node.nodeType === 3) {
+        let text = node.nodeValue.replace(/[\s\u00a0]+/g, ' ');
+        if (!cur) { text = text.replace(/^ /, ''); if (!text) return; start('p'); }
+        if (!cur.text && !cur.html) text = text.replace(/^ /, '');
+        if (!text) return;
+        if (f.b || f.i || f.u) fancy = true;
+        cur.html += wrapRun(text, f); cur.text += text;
+        return;
+      }
+      if (node.nodeType !== 1) return;
+      const tag = node.tagName.toLowerCase();
+      if (SKIP.has(tag) || node.hasAttribute('hidden')) return;
+      if (tag === 'br') { cur = null; return; }
+      const st = node.style || {};
+      const nf = Object.assign({}, f);
+      const fw = st.fontWeight;
+      if (tag === 'b' || tag === 'strong') nf.b = !(fw === 'normal' || fw === '400'); // Google Docs wraps everything in <b style="font-weight:normal">
+      else if (fw === 'bold' || fw === 'bolder' || +fw >= 600) nf.b = true;
+      else if (fw === 'normal' || +fw === 400) nf.b = false;
+      if (tag === 'i' || tag === 'em' || tag === 'cite') nf.i = st.fontStyle !== 'normal';
+      else if (st.fontStyle === 'italic') nf.i = true;
+      else if (st.fontStyle === 'normal') nf.i = false;
+      if (tag === 'u' || /underline/.test(st.textDecoration || st.textDecorationLine || '')) nf.u = tag !== 'a'; // links are not underlined text
+      const bt = BLOCK[tag];
+      if (bt) {
+        cur = null;
+        if (bt !== 'p') { start(bt); fancy = true; }
+        for (const ch of node.childNodes) walk(ch, nf);
+        cur = null;
+        return;
+      }
+      for (const ch of node.childNodes) walk(ch, nf);
+    };
+    walk(dom.body, {});
+    const real = blocks.filter((b) => b.text.trim());
+    if (!real.length) return '';
+    if (real.length === 1 && !fancy) return ''; // plain: the normal paste path handles it
+    if (real.length === 1 && real[0].t === 'p') return real[0].html.replace(/ +$/, '');
+    return real.map((b) => { const tg = b.t === 'quote' ? 'blockquote' : b.t; return '<' + tg + '>' + b.html.replace(/^ +| +$/g, '') + '</' + tg + '>'; }).join('');
+  }
+  let plainTimer = 0;
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'v') { plainPaste = true; clearTimeout(plainTimer); plainTimer = setTimeout(() => { plainPaste = false; }, 800); } // only for this paste
+  }, true);
   editor.addEventListener('paste', (e) => {
     e.preventDefault();
     if (reading) return;
+    commitHistory(); // the paste is its own undo step
+    const html = e.clipboardData.getData('text/html');
+    if (html && prefs.richPaste !== false && !plainPaste) {
+      const rich = cleanPasteHtml(html);
+      if (rich) { document.execCommand('insertHTML', false, rich); cleanBlocks(); return; }
+    }
+    plainPaste = false;
     const text = (e.clipboardData.getData('text/plain') || '').replace(/\r\n?/g, '\n');
     const lines = text.split('\n');
     if (lines.length > 40) {
@@ -1505,6 +1808,17 @@
     });
   });
   editor.addEventListener('drop', (e) => e.preventDefault());
+  // drop a .draft, .md or .txt file on the window to open it
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    const p = f && window.api.pathForFile(f);
+    if (!p || !/\.(draft|md|markdown|txt|docx)$/i.test(p)) return;
+    if (!(await confirmDiscard())) return;
+    if (filePath && dirty) await autosave();
+    openResult(await window.api.openPath(p));
+  });
   editor.addEventListener('click', (e) => {
     const span = e.target.closest && e.target.closest('.note');
     if (span && (e.ctrlKey || reading)) openNotePop(span.dataset.note, span);
@@ -1586,6 +1900,9 @@
   $('#readBack').addEventListener('click', () => setMode('write'));
   $('#settingsClose').addEventListener('click', () => { closePanels(); if (!reading) editor.focus(); });
   $('#settings').addEventListener('mousedown', (e) => { if (e.target === $('#settings')) { closePanels(); if (!reading) editor.focus(); } });
+  $('#docAuthor').addEventListener('input', (e) => { doc.author = e.target.value; markDirty(); });
+  $('#docSubtitle').addEventListener('input', (e) => { doc.subtitle = e.target.value; markDirty(); });
+  $('#docExtra').addEventListener('input', (e) => { doc.extra = e.target.value; markDirty(); });
   $('#docTitle').addEventListener('input', (e) => { doc.title = e.target.value; markDirty(); updateFileHint(); });
   $('#outlineClose').addEventListener('click', closeOutline);
   $('#addChapter').addEventListener('click', addChapter);
@@ -1630,9 +1947,11 @@
     const k = el.dataset.num;
     const commit = () => {
       const mn = +el.min, mx = +el.max;
-      let v = Math.round(+el.value);
+      const st = +el.step || 1;
+      let v = +el.value;
       if (!isFinite(v) || el.value === '') v = prefs[k];
-      v = Math.min(mx, Math.max(mn, v));
+      v = Math.round(v / st) * st;
+      v = Math.min(mx, Math.max(mn, +v.toFixed(2)));
       el.value = v;
       savePrefs({ [k]: v });
     };
@@ -1641,7 +1960,7 @@
     el.addEventListener('focus', () => el.select());
   });
   $$('[data-reset]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.reset; savePrefs({ [k]: DEFAULTS[k] }); }));
-  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'weight', 'size', 'measure', 'anchor', 'typewriter', 'centerMode', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'autoUpdate'];
+  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'richPaste', 'weight', 'size', 'measure', 'lineHeight', 'paraGap', 'indent', 'headBefore', 'headAfter', 'quoteGap', 'anchor', 'typewriter', 'centerMode', 'focus', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'showSession', 'autoUpdate'];
   $('#resetAll').addEventListener('click', () => {
     const patch = {};
     RESETTABLE.forEach((k) => { if (DEFAULTS[k] !== undefined) patch[k] = DEFAULTS[k]; });
@@ -1676,5 +1995,5 @@
   kick(true);
 
   // exposed for tests
-  window.__app = { get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
+  window.__app = { openResult, savePrefs, get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
 })();

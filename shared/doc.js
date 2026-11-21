@@ -71,7 +71,7 @@
       title: str(doc.title), created: str(doc.created) || now(), modified: str(doc.modified) || now(),
       chapters: [], notes: {},
     };
-    if (typeof doc.author === 'string') out.author = doc.author;
+    for (const k of ['author', 'subtitle', 'extra']) if (typeof doc[k] === 'string' && doc[k].trim()) out[k] = doc[k];
     const seen = new Set();
     for (const c of Array.isArray(doc.chapters) ? doc.chapters : []) {
       if (!c || typeof c !== 'object') continue;
@@ -93,7 +93,9 @@
         }
         blocks.push({ t: BLOCK_TYPES[b.t] === 1 ? b.t : 'p', runs });
       }
-      out.chapters.push({ id, title: str(c.title), blocks: blocks.length ? blocks : [{ t: 'p', runs: [] }] });
+      const ch = { id, title: str(c.title), blocks: blocks.length ? blocks : [{ t: 'p', runs: [] }] };
+      if (c.nonum) ch.nonum = true; // this chapter's page numbers are not shown (the pages are still counted)
+      out.chapters.push(ch);
     }
     if (!out.chapters.length) out.chapters = [newChapter()];
     if (doc.notes && typeof doc.notes === 'object') {
@@ -112,9 +114,10 @@
   // One block per line, so version control (git) shows readable diffs.
   function serializeDraft(doc) {
     const head = { format: FORMAT, version: VERSION, id: doc.id, title: doc.title || '', created: doc.created, modified: doc.modified };
+    for (const k of ['subtitle', 'author', 'extra']) if (doc[k]) head[k] = doc[k];
     const chapters = doc.chapters.map((c) => {
       const blocks = c.blocks.map((b) => '    ' + JSON.stringify({ t: b.t, runs: normalizeRuns(b.runs) })).join(',\n');
-      return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
+      return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + (c.nonum ? ', "nonum": true' : '') + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
     });
     const used = usedNoteIds(doc);
     const notes = {};
@@ -144,6 +147,25 @@
 
   /* ---------- headings ---------- */
   // With several chapters, chapter titles are the top heading and in-text headings move one level down.
+  // The copy of a document that gets exported: only the chosen chapters, and a chapter without a name takes its first Heading 1
+  // as its name (so it is not exported as "Untitled chapter" with the real title demoted underneath).
+  function forExport(doc, opts) {
+    opts = opts || {};
+    const manyChapters = doc.chapters.length > 1;
+    let chapters = doc.chapters;
+    if (Array.isArray(opts.chapterIds)) {
+      const keep = new Set(opts.chapterIds);
+      const picked = chapters.filter((c) => keep.has(c.id));
+      if (picked.length) chapters = picked;
+    }
+    chapters = chapters.map((c) => {
+      if (!manyChapters || c.title.trim()) return c;
+      const i = c.blocks.findIndex((b) => blockText(b).trim());
+      if (i < 0 || c.blocks[i].t !== 'h1') return c;
+      return Object.assign({}, c, { title: blockText(c.blocks[i]).trim(), blocks: c.blocks.slice(0, i).concat(c.blocks.slice(i + 1)) });
+    });
+    return Object.assign({}, doc, { chapters });
+  }
   function headingPlan(doc) {
     const titled = doc.chapters.length > 1 || (doc.chapters[0] && doc.chapters[0].title.trim() !== '');
     return { chapterHeadings: titled, shift: titled ? 1 : 0 };
@@ -175,6 +197,7 @@
   }
   function toMarkdown(doc, opts) {
     opts = opts || {};
+    doc = forExport(doc, opts);
     const plan = headingPlan(doc);
     const notes = opts.notes ? orderedNotes(doc) : [];
     const num = {};
@@ -182,6 +205,7 @@
     const emitted = new Set();
     const marker = (id) => { if (!num[id] || emitted.has(id)) return ''; emitted.add(id); return '[^' + num[id] + ']'; };
     const out = [];
+    if (opts.titlePage && (doc.title || '').trim()) { out.push('# ' + escMd(doc.title.trim())); if (doc.subtitle) out.push('*' + escMd(doc.subtitle.trim()) + '*'); if (opts.author) out.push('by ' + escMd(opts.author)); if (doc.extra) out.push(escMd(doc.extra.trim())); out.push('---'); }
     doc.chapters.forEach((c) => {
       if (plan.chapterHeadings) out.push('# ' + escMd(c.title.trim() || 'Untitled chapter'));
       for (const b of c.blocks) {
@@ -198,12 +222,14 @@
   }
   function toPlainText(doc, opts) {
     opts = opts || {};
+    doc = forExport(doc, opts);
     const plan = headingPlan(doc);
     const notes = opts.notes ? orderedNotes(doc) : [];
     const num = {};
     notes.forEach((n) => (num[n.id] = n.num));
     const emitted = new Set();
     const out = [];
+    if (opts.titlePage && (doc.title || '').trim()) { out.push(doc.title.trim().toUpperCase()); if (doc.subtitle) out.push(doc.subtitle.trim()); if (opts.author) out.push('by ' + opts.author); if (doc.extra) out.push(doc.extra.trim()); out.push('* * *'); }
     doc.chapters.forEach((c, ci) => {
       if (plan.chapterHeadings) out.push((ci ? '\n' : '') + (c.title.trim() || 'Untitled chapter').toUpperCase());
       for (const b of c.blocks) {
@@ -277,7 +303,7 @@
 
   return {
     FORMAT, VERSION, slugify, uid, now, newDoc, newChapter, blockText, isCite, countWords, countDoc, normalizeRuns, validate,
-    parseDraft, serializeDraft, usedNoteIds, orderedNotes, headingPlan, blockLevel,
+    parseDraft, serializeDraft, usedNoteIds, orderedNotes, headingPlan, forExport, blockLevel,
     toMarkdown, toPlainText, fromMarkdown, parseInlineMd,
   };
 });

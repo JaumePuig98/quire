@@ -8,12 +8,14 @@ const X = require('./exporters.js');
 
 const isDev = process.argv.includes('--dev');
 const FILE_EXTS = ['.draft', '.md', '.markdown', '.txt'];
+const OPEN_EXTS = FILE_EXTS.concat('.docx');
 
 /* ---------------------------- preferences ---------------------------- */
 const DEFAULT_PREFS = {
   theme: 'system', // system | light | dark
   font: 'serif', // serif | sans
   size: 22, weight: 400,
+  lineHeight: 1.7, paraGap: 0.6, indent: 0, headBefore: 0.9, headAfter: 0.4, quoteGap: 0.9, // spacing
   measure: 680,
   anchor: 68, // % of the window height where the writing line sits
   typewriter: true,
@@ -22,7 +24,7 @@ const DEFAULT_PREFS = {
   goal: 0, // daily word goal, 0 = off
   fullscreen: true,
   readScope: 'chapter', centerMode: 'strict', justify: true, fmtbar: true, bookGoal: 0, autoUpdate: true, // text slides sideways so the caret stays in the middle
-  accent: 'amber',
+  accent: 'amber', titlePage: null, // null = automatic: a title page for a book that has a title showSession: false, richPaste: true, pageNumbers: true, focus: 'off', streak: { last: '', count: 0, best: 0 },
   recent: [],
   lastPath: null,
 };
@@ -106,6 +108,13 @@ function createWindow() {
 
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e) => e.preventDefault());
+  // if the page ever crashes, bring it back: the autosave and recovery copy are already on disk
+  let lastCrash = 0;
+  win.webContents.on('render-process-gone', () => {
+    if (Date.now() - lastCrash < 10000) return;
+    lastCrash = Date.now();
+    setTimeout(() => { if (win && !win.isDestroyed()) win.reload(); }, 300);
+  });
 
   // The renderer saves its work before the window actually closes.
   win.on('close', (e) => {
@@ -169,14 +178,18 @@ const lastText = new Map();
 const SNAPSHOT_EVERY_MS = 5 * 60 * 1000;
 const SNAPSHOT_KEEP = 60;
 
-function writeSnapshot(id, text) {
+// A snapshot file is "<time>.draft", or "<time>~<name>.draft" when the person named it: named ones are never cleaned up.
+const cleanSnapName = (n) => String(n || '').replace(/[\\/:*?"<>|.~\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+function writeSnapshot(id, text, name) {
   try {
     const dir = path.join(versionsRoot(), id);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, new Date().toISOString().replace(/[:.]/g, '-') + '.draft'), text);
-    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.draft')).sort();
+    const nm = cleanSnapName(name);
+    fs.writeFileSync(path.join(dir, new Date().toISOString().replace(/[:.]/g, '-') + (nm ? '~' + nm : '') + '.draft'), text);
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.draft') && !f.includes('~')).sort();
     for (const f of files.slice(0, Math.max(0, files.length - SNAPSHOT_KEEP))) fs.unlinkSync(path.join(dir, f));
-  } catch (e) { /* history is best effort */ }
+    return true;
+  } catch (e) { return false; /* history is best effort */ }
 }
 function snapshot(text, force) {
   const id = idOf(text);
@@ -209,18 +222,32 @@ ipcMain.on('init:get', (e) => {
   }
   e.returnValue = { prefs, defaults: DEFAULT_PREFS, systemDark: nativeTheme.shouldUseDarkColors, open, recovery, fullscreen: win ? win.isFullScreen() : false };
 });
-ipcMain.on('prefs:set', (e, p) => { Object.assign(prefs, p); savePrefs(); });
+ipcMain.on('prefs:set', (e, p) => {
+  if (!p || typeof p !== 'object') return;
+  for (const k of Object.keys(p)) if (k in DEFAULT_PREFS) prefs[k] = p[k]; // only known settings
+  savePrefs();
+});
 
+// Word files are converted here: the page receives an ordinary draft, flagged as an import.
+async function readAny(p) {
+  if (path.extname(String(p)).toLowerCase() !== '.docx') return readDoc(p);
+  try {
+    if (fs.statSync(p).size > 60 * 1024 * 1024) return { path: p, error: path.basename(p) + ' is too large to import.' };
+    const { importDocx } = require('./docx-import');
+    const doc = await importDocx(p, path.basename(p, path.extname(p)));
+    return { path: p, text: D.serializeDraft(doc), imported: true };
+  } catch (err) { return { path: p, error: 'Could not import ' + path.basename(p) + '. The file is damaged or is not a Word document.' }; }
+}
 ipcMain.handle('doc:open-dialog', async () => {
   const r = await dialog.showOpenDialog(win, {
     title: 'Open',
     properties: ['openFile'],
-    filters: [{ name: 'Documents', extensions: ['draft', 'md', 'markdown', 'txt'] }, { name: 'All files', extensions: ['*'] }],
+    filters: [{ name: 'Documents', extensions: ['draft', 'md', 'markdown', 'txt', 'docx'] }, { name: 'All files', extensions: ['*'] }],
   });
   if (r.canceled || !r.filePaths.length) return null;
-  return readDoc(r.filePaths[0]);
+  return readAny(r.filePaths[0]);
 });
-ipcMain.handle('doc:open-path', (e, p) => readDoc(p));
+ipcMain.handle('doc:open-path', (e, p) => readAny(p));
 
 /* ---- the app's own file browser ---- */
 const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
@@ -368,8 +395,21 @@ ipcMain.handle('versions:list', (e, id) => {
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(String(id))) return [];
     const dir = path.join(versionsRoot(), id);
     return fs.readdirSync(dir).filter((f) => f.endsWith('.draft')).sort().reverse()
-      .map((f) => ({ file: path.join(dir, f), time: fs.statSync(path.join(dir, f)).mtimeMs }));
+      .map((f) => { const m = /~(.+)\.draft$/.exec(f); return { file: path.join(dir, f), time: fs.statSync(path.join(dir, f)).mtimeMs, name: m ? m[1] : '' }; });
   } catch (err) { return []; }
+});
+// "Save a version" with a name
+ipcMain.handle('versions:save', (e, { id, text, name }) => {
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(String(id)) || typeof text !== 'string' || !cleanSnapName(name)) return false;
+  return writeSnapshot(id, text, name);
+});
+ipcMain.handle('versions:delete', (e, f) => {
+  try {
+    const full = path.resolve(String(f));
+    if (!full.startsWith(versionsRoot() + path.sep) || !path.basename(full).includes('~')) return false; // only named versions, only inside the history folder
+    fs.unlinkSync(full);
+    return true;
+  } catch (err) { return false; }
 });
 ipcMain.handle('versions:read', (e, f) => {
   try {

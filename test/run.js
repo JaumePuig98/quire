@@ -80,6 +80,50 @@ const X = require('../exporters.js');
   fs.writeFileSync(path.join(os.tmpdir(), 'wa-test-nonotes.docx'), buf2);
   console.log('ok docx written', buf.length);
 
+  // docx import: export a book, read it back
+  {
+    const { importDocx } = require('../docx-import.js');
+    const book = D.newDoc(); book.title = 'Round Trip';
+    book.chapters = [
+      { id: 'c1', title: '', blocks: [{ t: 'h1', runs: [{ text: 'One' }] }, { t: 'p', runs: [{ text: 'Plain ' }, { text: 'bold', b: 1 }, { text: ' and ' }, { text: 'italic', i: 1 }, { text: ' text.' }] }, { t: 'quote', runs: [{ text: 'A quote' }] }] },
+      { id: 'c2', title: '', blocks: [{ t: 'h1', runs: [{ text: 'Two' }] }, { t: 'h2', runs: [{ text: 'Part' }] }, { t: 'p', runs: [{ text: 'More words here, caf\u00e9 & <tags>.' }] }] },
+    ];
+    const f = path.join(os.tmpdir(), 'wa-roundtrip.docx');
+    fs.writeFileSync(f, await X.toDocx(book, { font: 'serif' }));
+    const back = await importDocx(f, 'wa-roundtrip');
+    assert.strictEqual(back.chapters.length, 2, 'one chapter per Heading 1');
+    assert.ok(!JSON.stringify(back).includes('Untitled chapter'), 'chapters take their Heading 1 as name, never Untitled chapter');
+    assert.strictEqual(back.chapters[0].blocks[0].t, 'h1');
+    const t0 = back.chapters[0].blocks[1].runs;
+    assert.ok(t0.some((r) => r.b && r.text === 'bold') && t0.some((r) => r.i && r.text === 'italic'), 'bold and italic survive');
+    assert.ok(D.blockText(back.chapters[1].blocks[2]).includes('caf\u00e9 & <tags>.'), 'special characters survive');
+    assert.ok(back.chapters[1].blocks.some((b) => b.t === 'h2'), 'Heading 2 survives');
+    assert.ok(back.chapters[0].blocks.some((b) => b.t === 'quote'), 'quote style survives');
+    assert.doesNotThrow(() => D.parseDraft(D.serializeDraft(back)));
+    // compile: chosen chapters only, title page
+    book.author = 'A. Writer';
+    const md = D.toMarkdown(book, { chapterIds: ['c2'], titlePage: true, author: book.author });
+    assert.ok(md.startsWith('# Round Trip\n\nby A. Writer\n\n---') && md.includes('# Two') && !md.includes('One'), 'compile: title page and chosen chapters');
+    const txt = D.toPlainText(book, { chapterIds: ['c1'] });
+    assert.ok(txt.includes('ONE') && !txt.includes('Two'), 'compile: plain text keeps chosen chapters');
+    const f2 = path.join(os.tmpdir(), 'wa-title.docx');
+    fs.writeFileSync(f2, await X.toDocx(book, { titlePage: true, author: book.author, chapterIds: ['c1', 'c2'] }));
+    const back2 = await importDocx(f2, 'x');
+    const full = D.parseDraft(D.serializeDraft(Object.assign(D.newDoc(), { author: 'Me', subtitle: 'Sub', extra: 'A novel' })));
+    assert.ok(full.author === 'Me' && full.subtitle === 'Sub' && full.extra === 'A novel', 'author, subtitle and extra line are kept in the file');
+    book.subtitle = 'A Quiet Tale'; book.extra = 'A novel';
+    const md2 = D.toMarkdown(book, { titlePage: true, author: 'A. Writer' });
+    assert.ok(md2.startsWith('# Round Trip\n\n*A Quiet Tale*\n\nby A. Writer\n\nA novel\n\n---'), 'title page: subtitle, author, extra line in order');
+    assert.ok(!D.toMarkdown(book, { titlePage: true }).includes('by '), 'empty author is left out');
+    const h2 = X.toHtml(book, { titlePage: true, author: 'A. Writer' });
+    assert.ok(h2.includes('class="subtitle">A Quiet Tale') && h2.includes('class="extra">A novel'), 'html title page has subtitle and extra line');
+    const nb = D.parseDraft(D.serializeDraft(Object.assign({}, book, { chapters: [Object.assign({}, book.chapters[0], { nonum: true }), book.chapters[1]] })));
+    assert.ok(nb.chapters[0].nonum === true && !nb.chapters[1].nonum, 'a chapter keeps its hidden-number flag in the file');
+    const hh = X.toHtml(nb, { pageNumbers: true });
+    assert.ok(/class="chapter nonum"/.test(hh) && hh.includes('counter(page)'), 'html: hidden chapter gets the nonum page, others are numbered');
+    console.log('ok docx import');
+  }
+
   // html
   const html = X.toHtml(doc, { font: 'serif', notes: true, fontsDir: path.join(__dirname, '..', 'renderer', 'fonts') });
   assert(html.includes('<h1>The Lamp</h1>') && html.includes('<h2>A heading</h2>') && html.includes('class="nref"'));

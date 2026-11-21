@@ -43,24 +43,24 @@ button{font:inherit;color:inherit}
 #scroller::-webkit-scrollbar{display:none}
 #page{position:relative;width:min(var(--measure),calc(100vw - 48px));margin:0 auto}
 #editor{
-  outline:none;font-family:var(--serif);font-weight:var(--fw,400);font-size:var(--fs);line-height:1.7;
+  outline:none;font-family:var(--serif);font-weight:var(--fw,400);font-size:var(--fs);line-height:var(--lh,1.7);
   padding-top:calc(var(--anchor) * 1vh - var(--fs) * .85);
   padding-bottom:calc((100 - var(--anchor)) * 1vh);
   caret-color:rgb(var(--accent));white-space:pre-wrap;word-wrap:break-word;
 }
-#editor p,.lineWrap p{margin:0 0 .6em}
-#editor h1,#editor h2,.lineWrap h1,.lineWrap h2{margin:.9em 0 .4em;line-height:1.25;font-weight:min(900,calc(var(--fw,400) + 300))}
+#editor p,.lineWrap p{margin:0 0 var(--pg,.6em);text-indent:var(--indent,0)}
+#editor h1,#editor h2,.lineWrap h1,.lineWrap h2{margin:var(--hb,.9em) 0 var(--ha,.4em);line-height:1.25;font-weight:min(900,calc(var(--fw,400) + 300))}
 #editor b,#editor strong,.lineWrap b,.lineWrap strong{font-weight:min(900,calc(var(--fw,400) + 300))}
 #editor h1,.lineWrap h1{font-size:1.55em}
 #editor h2,.lineWrap h2{font-size:1.25em}
 /* quotes: like an epigraph in a book - narrower, smaller, set to the right; a line starting with a dash is the author */
 #editor blockquote,.lineWrap blockquote{margin:0 0 .15em auto;width:62%;padding:0;font-size:.92em;line-height:1.6;font-style:italic;text-align:right!important;hyphens:none}
 #editor blockquote.cite,.lineWrap blockquote.cite{font-style:normal;text-align:right;font-size:.86em;color:rgb(var(--muted))}
-#editor :not(blockquote)+blockquote,#editor blockquote+:not(blockquote){margin-top:.9em}
+#editor :not(blockquote)+blockquote,#editor blockquote+:not(blockquote){margin-top:var(--qg,.9em)}
 body.justify #editor p,body.justify .lineWrap p{text-align:justify;hyphens:auto}
 .lineText>*{margin-top:0!important;margin-bottom:0!important;margin-left:0!important;width:100%!important}
 #lineLayer{position:absolute;left:0;top:0;width:100%;height:0;pointer-events:none;z-index:1}
-.lineWrap{position:absolute;font-weight:var(--fw,400);font-family:var(--serif);font-size:var(--fs);line-height:1.7;white-space:pre-wrap;word-wrap:break-word;will-change:transform}
+.lineWrap{position:absolute;font-weight:var(--fw,400);font-family:var(--serif);font-size:var(--fs);line-height:var(--lh,1.7);white-space:pre-wrap;word-wrap:break-word;will-change:transform}
 body[data-font=sans] .lineWrap{font-family:var(--smooth)}
 body[data-font=type] .lineWrap{font-family:var(--type)}
 .lineText{-webkit-mask-image:linear-gradient(transparent var(--bt),#000 var(--bt),#000 var(--bb),transparent var(--bb));mask-image:linear-gradient(transparent var(--bt),#000 var(--bt),#000 var(--bb),transparent var(--bb))}
@@ -141,7 +141,7 @@ body.reading #fmtdock{display:none}
 .swatches button{width:24px;height:24px;min-width:24px;padding:0;border-radius:50%;border:2px solid transparent;box-shadow:inset 0 0 0 1px rgb(0 0 0/.12)}
 .swatches button:hover{background-clip:padding-box}
 .swatches button.on{border-color:rgb(var(--ink))}
-#docTitle{width:100%;margin:4px 0 12px;padding:7px 9px;border:1px solid rgb(var(--line));border-radius:8px;background:rgb(var(--bg));color:inherit;font:13.5px var(--sans)}
+#docTitle,#docSubtitle,#docAuthor,#docExtra{width:100%;margin:4px 0 12px;padding:7px 9px;border:1px solid rgb(var(--line));border-radius:8px;background:rgb(var(--bg));color:inherit;font:13.5px var(--sans)}
 #fileHint{float:right;color:rgb(var(--muted))}
 #btnClose:hover{background:rgb(190 60 60/.16)}
 #status,#saveState{position:fixed;z-index:5;bottom:24px;font-size:12px;color:rgb(var(--muted));transition:opacity .35s}
@@ -200,7 +200,7 @@ button.primary .hint{color:inherit;opacity:.7}
 }
 .panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:13px}
 #chapterList{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:4px}
-#chapterList li{display:flex;align-items:center;gap:4px;padding:4px;border:1px solid transparent;border-radius:8px}
+#chapterList li{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:4px;border:1px solid transparent;border-radius:8px}
 #chapterList li.current{border-color:rgb(var(--line));background:rgb(var(--ink)/.05)}
 #chapterList .num{width:20px;text-align:center;color:rgb(var(--muted));font-size:11.5px}
 #chapterList input{flex:1;min-width:0;border:0;background:transparent;color:inherit;font:13px var(--sans);padding:5px 4px;border-radius:5px}
@@ -236,6 +236,7 @@ body.review .note{background:rgb(var(--accent)/.26)}
 #findbar button[aria-pressed=true]{background:rgb(var(--accent)/.25)}
 #findCount{min-width:58px;text-align:right;font-size:11.5px;color:rgb(var(--muted));white-space:nowrap}
 #findbar.readonly #replaceRow{display:none}
+::highlight(focusdim){color:rgb(var(--ink)/.3);background-color:transparent}
 ::highlight(find){background-color:rgb(var(--accent)/.28);color:inherit}
 ::highlight(find-current){background-color:rgb(var(--accent)/.62);color:inherit}
 select{font:13px var(--sans);padding:4px 6px;border:1px solid rgb(var(--line));border-radius:7px;background:rgb(var(--bg));color:inherit;max-width:190px}
@@ -365,3 +366,34 @@ body.fmthidden #fmtToggle{font-size:0}
 #settings .row.disabled{opacity:.45}
 #settings .row.disabled input{cursor:default}
 #modeMenu button:focus-visible{outline-offset:-2px}
+
+#exportChapters{padding:2px 4px 4px}
+#exportChaptersBtn{margin:0;padding:6px 6px;color:rgb(var(--muted))}
+#exportChapterList{max-height:200px;overflow-y:auto;padding:2px 4px}
+#exportChapterList label{display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:13px;cursor:pointer}
+
+#findResults{list-style:none;margin:2px 0 0;padding:0;max-height:260px;overflow-y:auto}
+#findResults li{padding:6px 8px;border-radius:7px;font-size:12.5px;line-height:1.4;cursor:pointer;color:rgb(var(--ink)/.85)}
+#findResults li:hover,#findResults li:focus-visible{background:rgb(var(--ink)/.08);outline:none}
+#findResults li small{display:block;color:rgb(var(--muted));font-size:11px;margin-bottom:1px}
+#findResults li mark{background:rgb(var(--accent)/.3);color:inherit;border-radius:2px;padding:0 1px}
+#findResults .more{cursor:default;color:rgb(var(--muted))}
+
+.vsave{display:flex;gap:6px;margin:8px 0 6px}
+.vsave input{flex:1;min-width:0;padding:7px 9px;border:1px solid rgb(var(--line));border-radius:8px;background:rgb(var(--bg));color:inherit;font:13px var(--sans)}
+#versionList li.named .vname{font-weight:600}
+#versionList li{display:flex;align-items:center;gap:4px}
+#versionList li > button:first-child{flex:1}
+#versionList .vdel{flex:none;width:auto;padding:4px 8px;color:rgb(var(--muted));font-size:12px}
+.vsave[hidden]{display:none}
+
+#chapterList .toc{flex:1 0 100%;list-style:none;margin:0 0 2px;padding:0 0 2px 26px;display:flex;flex-direction:column;gap:0}
+#chapterList .toc li{display:block;padding:0;border:0;background:none}
+#chapterList .toc button{display:block;width:100%;height:auto;padding:3px 6px;border:0;border-radius:5px;background:transparent;color:rgb(var(--muted));font:12px/1.35 var(--sans);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#chapterList .toc button:hover,#chapterList .toc button:focus-visible{background:rgb(var(--ink)/.08);color:rgb(var(--ink))}
+#chapterList .toc .lv-h2{padding-left:16px}
+#chapterList .toc{box-sizing:border-box;width:100%;min-width:0}
+#chapterList .toc li{min-width:0}
+#chapterList .toc button{box-sizing:border-box;min-width:0;max-width:100%}
+#chapterList .pn{min-width:24px;font-weight:600}
+#chapterList .pn.off{color:rgb(var(--muted));text-decoration:line-through;opacity:.7}

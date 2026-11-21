@@ -63,6 +63,7 @@
     <button type="button" id="findPrev" title="Previous match (Shift+Enter)" aria-label="Previous match">&#8593;</button>
     <button type="button" id="findNext" title="Next match (Enter)" aria-label="Next match">&#8595;</button>
     <button type="button" id="findCase" title="Match case" aria-pressed="false">Aa</button>
+    <button type="button" id="findList" title="List every match" aria-pressed="false" aria-controls="findResults">List</button>
     <button type="button" id="findClose" title="Close (Esc)" aria-label="Close find">&#10005;</button>
   </div>
   <div class="frow" id="replaceRow">
@@ -71,6 +72,7 @@
     <button type="button" id="replaceAll">All</button>
   </div>
   <label class="check"><input type="checkbox" id="findAllChapters"> Search all chapters</label>
+  <ul id="findResults" aria-label="All matches" hidden></ul>
 </div>
 <div id="readbar" hidden>
   <span class="hint">Reading</span>
@@ -86,10 +88,16 @@
   <div class="panel-head"><strong>Chapters</strong><button type="button" id="outlineClose" aria-label="Close">Close</button></div>
   <label class="small" for="docTitle">Title <span id="fileHint"></span></label>
   <input id="docTitle" type="text" placeholder="Title of the book or document" autocomplete="off">
+  <label class="small" for="docSubtitle">Subtitle <span class="hint">optional, for the title page</span></label>
+  <input id="docSubtitle" type="text" placeholder="Subtitle" autocomplete="off">
+  <label class="small" for="docAuthor">Author</label>
+  <input id="docAuthor" type="text" placeholder="Used in exports and on the title page" autocomplete="off">
+  <label class="small" for="docExtra">Extra line <span class="hint">optional, for example A novel</span></label>
+  <input id="docExtra" type="text" placeholder="A novel, a draft date, an edition..." autocomplete="off">
   <ol id="chapterList"></ol>
   <p id="bookTotal" class="small" aria-live="polite"></p>
   <button type="button" id="addChapter" class="wide">Add chapter</button>
-  <p class="small">Click a chapter to open it. Chapters become new pages in Word and PDF exports.</p>
+  <p class="small">Click a chapter to open it. Chapters become new pages in Word and PDF exports. The # button hides a chapter's page numbers (its pages are still counted); the title page is never numbered or counted.</p>
 </aside>
 
 <!-- Export -->
@@ -99,6 +107,12 @@
   <button type="button" data-format="md">Markdown <span class="hint">.md</span></button>
   <button type="button" data-format="txt">Plain text <span class="hint">.txt</span></button>
   <label class="check"><input type="checkbox" id="exportNotes"> Include notes</label>
+  <label class="check"><input type="checkbox" data-pref="titlePage" id="exportTitlePage"> Title page</label>
+  <label class="check"><input type="checkbox" data-pref="pageNumbers"> Page numbers <span class="hint">Word and PDF</span></label>
+  <div id="exportChapters" hidden>
+    <button type="button" id="exportChaptersBtn" class="linkbtn" aria-expanded="false">Chapters: all</button>
+    <div id="exportChapterList" hidden></div>
+  </div>
 </div>
 
 <!-- Settings: a page of its own -->
@@ -109,9 +123,10 @@
       <nav class="st-nav" aria-label="Settings sections">
         <button type="button" data-sec="look" class="on">Appearance</button>
         <button type="button" data-sec="page">Page</button>
+        <button type="button" data-sec="space">Spacing</button>
         <button type="button" data-sec="line">Writing line</button>
         <button type="button" data-sec="goals">Goals</button>
-        <button type="button" data-sec="lang">Language/button>
+        <button type="button" data-sec="lang">Language</button>
       </nav>
       <div class="st-pane">
       <section data-secpane="look">
@@ -121,6 +136,7 @@
         <div class="row"><span>Font</span>
           <div class="seg" data-pref="font"><button type="button" data-v="serif">Literata</button><button type="button" data-v="sans">Nunito</button><button type="button" data-v="type">Typewriter</button></div></div>
         <label class="check"><input type="checkbox" data-pref="justify"> Justify text <span class="hint">quotes stay as they are</span></label>
+        <label class="check"><input type="checkbox" data-pref="richPaste"> Keep bold, italic and headings when pasting <span class="hint">Ctrl+Shift+V pastes plain</span></label>
         <label class="check"><input type="checkbox" data-pref="fmtbar"> Show the formatting bar <span class="hint">Ctrl+/</span></label>
       </section>
       <section data-secpane="page" hidden>
@@ -128,17 +144,30 @@
         <div class="row slider"><span>Text size</span><input type="range" min="17" max="34" step="1" data-pref="size" aria-label="Text size"><span class="num"><input type="number" min="17" max="34" step="1" data-num="size" aria-label="Text size, exact value"><em>px</em></span><button type="button" class="reset" data-reset="size" title="Back to the default" aria-label="Reset Text size">&#8634;</button></div>
         <div class="row slider"><span>Column width</span><input type="range" min="480" max="940" step="10" data-pref="measure" aria-label="Column width"><span class="num"><input type="number" min="480" max="940" step="10" data-num="measure" aria-label="Column width, exact value"><em>px</em></span><button type="button" class="reset" data-reset="measure" title="Back to the default" aria-label="Reset Column width">&#8634;</button></div>
       </section>
+      <section data-secpane="space" hidden>
+        <div class="row slider"><span>Line spacing</span><input type="range" min="1.2" max="2.4" step="0.05" data-pref="lineHeight" aria-label="Line spacing"><span class="num"><input type="number" min="1.2" max="2.4" step="0.05" data-num="lineHeight" aria-label="Line spacing, exact value"><em>x</em></span><button type="button" class="reset" data-reset="lineHeight" title="Back to the default" aria-label="Reset Line spacing">&#8634;</button></div>
+        <div class="row slider"><span>Between paragraphs</span><input type="range" min="0" max="2" step="0.05" data-pref="paraGap" aria-label="Between paragraphs"><span class="num"><input type="number" min="0" max="2" step="0.05" data-num="paraGap" aria-label="Between paragraphs, exact value"><em>em</em></span><button type="button" class="reset" data-reset="paraGap" title="Back to the default" aria-label="Reset Between paragraphs">&#8634;</button></div>
+        <div class="row slider"><span>First-line indent</span><input type="range" min="0" max="3" step="0.25" data-pref="indent" aria-label="First-line indent"><span class="num"><input type="number" min="0" max="3" step="0.25" data-num="indent" aria-label="First-line indent, exact value"><em>em</em></span><button type="button" class="reset" data-reset="indent" title="Back to the default" aria-label="Reset First-line indent">&#8634;</button></div>
+        <div class="row slider"><span>Above headings</span><input type="range" min="0" max="3" step="0.1" data-pref="headBefore" aria-label="Above headings"><span class="num"><input type="number" min="0" max="3" step="0.1" data-num="headBefore" aria-label="Above headings, exact value"><em>em</em></span><button type="button" class="reset" data-reset="headBefore" title="Back to the default" aria-label="Reset Above headings">&#8634;</button></div>
+        <div class="row slider"><span>Below headings</span><input type="range" min="0" max="2" step="0.1" data-pref="headAfter" aria-label="Below headings"><span class="num"><input type="number" min="0" max="2" step="0.1" data-num="headAfter" aria-label="Below headings, exact value"><em>em</em></span><button type="button" class="reset" data-reset="headAfter" title="Back to the default" aria-label="Reset Below headings">&#8634;</button></div>
+        <div class="row slider"><span>Around quotes</span><input type="range" min="0" max="2.5" step="0.1" data-pref="quoteGap" aria-label="Around quotes"><span class="num"><input type="number" min="0" max="2.5" step="0.1" data-num="quoteGap" aria-label="Around quotes, exact value"><em>em</em></span><button type="button" class="reset" data-reset="quoteGap" title="Back to the default" aria-label="Reset Around quotes">&#8634;</button></div>
+        <p class="small">Line spacing also sets the distance between the line you write and the one above it. Exports keep their own standard spacing.</p>
+      </section>
       <section data-secpane="line" hidden>
         <label class="check"><input type="checkbox" data-pref="typewriter"> Typewriter scrolling <span class="hint">the line you write stays put</span></label>
         <div class="row slider"><span>Line position</span><input type="range" min="45" max="82" step="1" data-pref="anchor" aria-label="Line position"><span class="num"><input type="number" min="45" max="82" step="1" data-num="anchor" aria-label="Line position, exact value"><em>%</em></span><button type="button" class="reset" data-reset="anchor" title="Back to the default" aria-label="Reset Line position">&#8634;</button></div>
         <div class="row"><span>Caret centering <small>new text only</small></span>
           <div class="seg" data-pref="centerMode"><button type="button" data-v="off">Off</button><button type="button" data-v="soft">Soft</button><button type="button" data-v="strict">Centered</button></div></div>
+        <div class="row"><span>Focus <small>dims the rest</small></span>
+          <div class="seg" data-pref="focus"><button type="button" data-v="off">Off</button><button type="button" data-v="paragraph">Paragraph</button><button type="button" data-v="sentence">Sentence</button></div></div>
         <label class="check"><input type="checkbox" data-pref="fade"> Fade earlier text</label>
         <label class="check"><input type="checkbox" data-pref="glow"> Soft light at the writing line</label>
       </section>
       <section data-secpane="goals" hidden>
         <div class="row"><span>Daily word goal <small>0 = off</small></span><input type="number" class="plain" min="0" max="100000" step="50" data-pref="goal" aria-label="Daily word goal"></div>
         <div class="row"><span>Book target <small>words, 0 = off</small></span><input type="number" class="plain" min="0" max="2000000" step="1000" data-pref="bookGoal" aria-label="Book target in words"></div>
+        <label class="check"><input type="checkbox" data-pref="showSession"> Show words written this session</label>
+        <p class="small" id="streakNote"></p>
       </section>
       <section data-secpane="lang" hidden>
         <div class="row"><span>Spellcheck language</span><select id="spellA" aria-label="Spellcheck language"></select></div>
@@ -163,6 +192,10 @@
   <div class="modal-box" role="dialog" aria-label="Earlier versions">
     <div class="panel-head"><strong>Earlier versions</strong><button type="button" id="modalClose">Close</button></div>
     <p class="small">Snapshots are kept automatically while you write. Choosing one opens it as a new, unsaved document, so your current one is never overwritten.</p>
+    <div class="vsave" id="versionSave">
+      <input type="text" id="versionName" maxlength="60" placeholder="Name this version, for example Before the rewrite" aria-label="Name for this version" autocomplete="off">
+      <button type="button" id="versionSaveBtn" class="primary">Save version</button>
+    </div>
     <ul id="versionList"></ul>
   </div>
 </div>

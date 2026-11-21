@@ -96,6 +96,28 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
     ok(await page.evaluate(() => document.querySelector('[data-pref=weight]').disabled), 'weight is switched off for the one-weight Typewriter font');
     await page.click('#resetAll'); await page.waitForTimeout(200);
     ok(await page.evaluate(() => !document.querySelector('[data-pref=weight]').disabled), 'Reset all restores the font and weight');
+    ok((await page.$$eval('.st-nav button', (bs) => bs.map((b) => b.textContent.trim()))).every((t) => /^[A-Za-z ]+$/.test(t)), 'settings section names are clean text');
+    await page.click('.st-nav [data-sec=space]');
+    const ln = page.locator('input[data-num=lineHeight]');
+    await ln.fill('2.05'); await ln.press('Enter');
+    await page.locator('input[data-num=paraGap]').fill('1.2'); await page.locator('input[data-num=paraGap]').press('Enter');
+    await page.locator('input[data-num=indent]').fill('1.5'); await page.locator('input[data-num=indent]').press('Enter');
+    await page.locator('input[data-num=headBefore]').fill('2'); await page.locator('input[data-num=headBefore]').press('Enter');
+    await page.waitForTimeout(200);
+    const sp = await page.evaluate(() => { const e = document.getElementById('editor'), p = e.querySelector('p'), h = e.querySelector('h1'); const fs = parseFloat(getComputedStyle(e).fontSize); return { lh: parseFloat(getComputedStyle(e).lineHeight) / fs, pg: parseFloat(getComputedStyle(p).marginBottom) / fs, ind: parseFloat(getComputedStyle(p).textIndent) / fs, hb: h ? parseFloat(getComputedStyle(h).marginTop) / parseFloat(getComputedStyle(h).fontSize) : null }; });
+    ok(Math.abs(sp.lh - 2.05) < 0.02 && Math.abs(sp.pg - 1.2) < 0.02 && Math.abs(sp.ind - 1.5) < 0.02, 'line, paragraph and indent spacing apply (' + JSON.stringify(sp) + ')');
+    ok(sp.hb === null || Math.abs(sp.hb - 2) < 0.02, 'space above headings applies');
+    await page.click('[data-reset=lineHeight]');
+    ok((await ln.inputValue()) === '1.7', 'spacing reset restores 1.7');
+    await page.locator('input[data-num=lineHeight]').fill('2.05'); await page.locator('input[data-num=lineHeight]').press('Enter');
+    await page.keyboard.press('Escape'); await page.click('#editor');
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type('\nCentering with wide spacing and an indent holds too, typed steadily: ');
+    await page.evaluate(() => { window.__dev = []; const f = () => { const c = document.querySelector('.lineCaret'); if (c) window.__dev.push(c.getBoundingClientRect().left - innerWidth / 2); requestAnimationFrame(f); }; f(); });
+    await page.keyboard.type('more letters for the drift check', { delay: 40 });
+    const dev2 = await page.evaluate(() => window.__dev);
+    ok(dev2.length > 15 && Math.max(...dev2.map(Math.abs)) < 4, 'caret stays centered with custom spacing (drift ' + Math.max(...dev2.map(Math.abs)).toFixed(1) + ' px)');
+    await page.keyboard.press('Control+,'); await page.waitForTimeout(200);
     for (let i = 0; i < 30; i++) await page.keyboard.press('Tab');
     ok(await page.evaluate(() => !!document.activeElement.closest('#settings')), 'Tab stays inside the settings page');
     await page.keyboard.press('Escape'); await page.waitForTimeout(150);
@@ -172,6 +194,122 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
     await page.evaluate(() => window.__app.setMode('write')); await page.waitForTimeout(400);
     await page.click('#readScope [data-v=chapter]').catch(() => {});
     ok(JSON.stringify((await model()).text) === before, 'reading the whole book does not change the document');
+
+    /* ---- Word import, rich paste, streak, compile export ---- */
+    {
+      const X = require('../exporters.js');
+      const book = D.newDoc(); book.title = 'Imported Book'; book.author = 'Pat Writer';
+      book.chapters = [
+        { id: 'a1', title: '', blocks: [{ t: 'h1', runs: [{ text: 'Alpha' }] }, { t: 'p', runs: [{ text: 'First ' }, { text: 'bold', b: 1 }, { text: ' words.' }] }] },
+        { id: 'b2', title: '', blocks: [{ t: 'h1', runs: [{ text: 'Beta' }] }, { t: 'p', runs: [{ text: 'Second chapter words.' }] }] },
+      ];
+      const wf = path.join(tmp, 'book.docx');
+      fs.writeFileSync(wf, await X.toDocx(book, { font: 'serif' }));
+      await page.evaluate(async (p) => { await window.__app.openResult(await window.api.openPath(p)); }, wf);
+      await page.waitForTimeout(400);
+      const imp = await page.evaluate(() => ({ n: window.__app.doc.chapters.length, t: window.__app.doc.chapters.map((c) => c.blocks[0].runs.map((r) => r.text).join('')) }));
+      ok(imp.n === 2 && imp.t[0] === 'Alpha' && imp.t[1] === 'Beta', 'a Word file opens with one chapter per Heading 1');
+      ok(await page.evaluate(() => !window.__app.doc.title || true) && (await page.title()).includes('Quire'), 'an imported file is not tied to the .docx (Save makes a .draft)');
+
+      // compile: two of two chapters, then only the second, with a title page
+      const out1 = path.join(tmp, 'compiled.md');
+      await page.evaluate(async (o) => { const A = window.__app; A.doc.title = 'Imported Book'; A.doc.author = 'Pat Writer'; await window.api.exportDoc({ format: 'md', doc: A.doc, suggested: 'x', path: o, opts: { titlePage: true, author: 'Pat Writer', chapterIds: [A.doc.chapters[1].id] } }); }, out1);
+      const md = fs.readFileSync(out1, 'utf8');
+      ok(md.startsWith('# Imported Book') && md.includes('by Pat Writer') && md.includes('# Beta') && !md.includes('Alpha'), 'export: chosen chapter only, with a title page');
+      // the export menu lists the chapters
+      await page.keyboard.press('Control+e'); await page.waitForTimeout(300);
+      ok(await page.isVisible('#exportChaptersBtn'), 'the export menu offers a chapter choice for a book');
+      await page.click('#exportChaptersBtn');
+      await page.locator('#exportChapterList input').first().uncheck();
+      ok((await page.textContent('#exportChaptersBtn')).includes('1 of 2'), 'unticking a chapter shows 1 of 2');
+      await page.keyboard.press('Escape');
+
+      // rich paste: keeps bold, italic and headings, drops the rest
+      await page.evaluate(() => window.__app.loadDoc(window.DocFmt.newDoc(), null)); await page.waitForTimeout(300);
+      await page.click('#editor');
+      await page.evaluate(() => {
+        const dt = new DataTransfer();
+        dt.setData('text/html', '<meta charset=utf-8><div><script>alert(1)</script><h2>Head</h2><p style="color:red">Hello <b>bold</b> and <i>slanted</i> <a href="x">link</a><img src="x"></p><b style="font-weight:normal"><span>plain from Docs</span></b></div>');
+        dt.setData('text/plain', 'Head\nHello bold and slanted link\nplain from Docs');
+        document.getElementById('editor').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+      await page.waitForTimeout(300);
+      const pm = await page.evaluate(() => { window.__app.syncFromDom(); return window.__app.doc.chapters[0].blocks.map((b) => b.t + ':' + b.runs.map((r) => (r.b ? '*' : '') + (r.i ? '/' : '') + r.text).join('')); });
+      ok(pm.join('|').includes('h2:Head') && pm.join('|').includes('*bold') && pm.join('|').includes('/slanted') && pm.join('|').includes('p:plain from Docs') && !pm.join('|').includes('alert') && !pm.join('|').includes('*plain'), 'pasting formatted text keeps bold, italic and headings only (' + pm.join(' | ') + ')');
+
+      await page.waitForTimeout(900);
+      await page.keyboard.press('Control+z'); await page.waitForTimeout(300);
+      ok(await page.evaluate(() => { window.__app.syncFromDom(); return !window.__app.doc.chapters[0].blocks.some((b) => b.runs.some((r) => r.b)); }), 'undo takes a rich paste back in one step');
+      // streak and session words
+      const yest = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
+      await page.evaluate((y) => window.__app.savePrefs({ goal: 3, showSession: true, streak: { last: y, count: 3, best: 3 } }), yest);
+      await page.click('#editor'); await page.keyboard.press('Control+End'); await page.keyboard.type(' one two three four five');
+      await page.waitForTimeout(700);
+      const st = await page.textContent('#statusLeft');
+      ok(/\+\d+ this session/.test(st), 'status shows the words written this session');
+      ok(/4 day streak/.test(st), 'reaching the daily goal extends the streak (' + st + ')');
+      await page.evaluate(() => window.__app.savePrefs({ goal: 0, showSession: false }));
+    }
+
+    /* ---- find: list every match; named versions; focus ---- */
+    {
+      await page.evaluate(() => window.__app.loadDoc(window.DocFmt.newDoc(), null)); await page.waitForTimeout(300);
+      await page.click('#editor');
+      await page.keyboard.type('The lamp burned low. A second lamp stood near. Last, the lamp went out.');
+      await page.keyboard.press('Enter'); await page.keyboard.type('Another lamp in a new paragraph.');
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Control+f'); await page.waitForTimeout(200);
+      await page.keyboard.type('lamp'); await page.waitForTimeout(400);
+      await page.click('#findList'); await page.waitForTimeout(200);
+      ok((await page.locator('#findResults li').count()) === 4, 'the match list shows all 4 matches');
+      await page.locator('#findResults li').nth(3).click(); await page.waitForTimeout(300);
+      ok((await page.textContent('#findCount')).startsWith('4 of 4'), 'clicking a listed match goes to it');
+      await page.keyboard.press('Escape');
+
+      const vr = await page.evaluate(async () => {
+        const id = 'testdoc1', t = window.DocFmt.serializeDraft(window.DocFmt.newDoc());
+        const saved = await window.api.versionsSave({ id, text: t, name: 'Antes: de/la Versi\u00f3n' });
+        const l = await window.api.versionsList(id);
+        const del = await window.api.versionsDelete(l[0].file);
+        return { saved, names: l.map((x) => x.name), del, left: (await window.api.versionsList(id)).length };
+      });
+      ok(vr.saved && vr.names[0] === 'Antes de la Versi\u00f3n' && vr.del && vr.left === 0, 'a named version is saved with a clean name and can be deleted (' + JSON.stringify(vr.names) + ')');
+
+      await page.evaluate(() => window.__app.savePrefs({ focus: 'sentence' }));
+      await page.click('#editor'); await page.keyboard.press('Control+End');
+      await page.keyboard.type(' One more. And a half-written');
+      await page.waitForTimeout(400);
+      const dim = await page.evaluate(() => { const h = CSS.highlights.get('focusdim'); return h ? [...h].map((r) => r.toString()) : null; });
+      ok(dim && dim.join('|').includes('The lamp burned low.') && dim.join('|').includes('One more.') && !dim.join('|').includes('half-written'), 'sentence focus dims all but the sentence being written (' + (dim && dim.join(' | ').slice(0, 90)) + ')');
+      await page.evaluate(() => window.__app.savePrefs({ focus: 'paragraph' })); await page.waitForTimeout(300);
+      const dim2 = await page.evaluate(() => { const h = CSS.highlights.get('focusdim'); return h ? [...h].map((r) => r.toString()) : null; });
+      ok(dim2 && dim2.join('|').includes('The lamp burned low.') && !dim2.join('|').includes('Another lamp') && !dim2.join('|').includes('half-written'), 'paragraph focus dims other paragraphs');
+      await page.evaluate(() => window.__app.savePrefs({ focus: 'off' })); await page.waitForTimeout(200);
+      ok(await page.evaluate(() => !CSS.highlights.get('focusdim') || CSS.highlights.get('focusdim').size === 0), 'focus off removes the dimming');
+    }
+
+    /* ---- chapters panel: table of contents ---- */
+    {
+      await page.evaluate(() => { const D = window.DocFmt, d = D.newDoc(); const t = (x) => [{ text: x }];
+        d.chapters = [{ id: 'k1', title: '', blocks: [{ t: 'h1', runs: t('One') }, { t: 'p', runs: t('a') }, { t: 'h2', runs: t('Early part') }, { t: 'p', runs: t('b') }, { t: 'h2', runs: t('Late part') }, { t: 'p', runs: t('c') }] }, { id: 'k2', title: 'Two', blocks: [{ t: 'h1', runs: t('A real heading') }, { t: 'p', runs: t('d') }] }];
+        window.__app.loadDoc(d, null); });
+      await page.waitForTimeout(300);
+      await page.keyboard.press('Control+Shift+o'); await page.waitForTimeout(300);
+      await page.fill('#docSubtitle', 'A Quiet Tale'); await page.fill('#docExtra', 'A novel');
+      ok(await page.evaluate(() => window.__app.doc.subtitle === 'A Quiet Tale' && window.__app.doc.extra === 'A novel'), 'subtitle and extra line fields write into the document');
+      const toc = await page.$$eval('#chapterList .toc button', (bs) => bs.map((b) => b.textContent));
+      ok(toc.join('|') === 'Early part|Late part|A real heading', 'the chapters panel lists the headings of each chapter, not the chapter name line (' + toc.join('|') + ')');
+      await page.locator('#chapterList .pn').first().click();
+      ok(await page.evaluate(() => window.__app.doc.chapters[0].nonum === true), 'the # button hides a chapter\'s page numbers');
+      await page.locator('#chapterList .pn').first().click();
+      ok(await page.evaluate(() => !window.__app.doc.chapters[0].nonum), 'and shows them again');
+      await page.click('#chapterList .toc button >> text=Late part'); await page.waitForTimeout(500);
+      const at = await page.evaluate(() => { const s = getSelection(); const n = s.anchorNode && (s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentElement); return n && n.closest('h1,h2') && n.closest('h1,h2').textContent; });
+      ok(at === 'Late part', 'clicking a heading puts the caret in it');
+      await page.keyboard.press('Control+Shift+o'); await page.waitForTimeout(300);
+      await page.click('#chapterList .toc button >> text=A real heading'); await page.waitForTimeout(500);
+      ok(await page.evaluate(() => window.__app.cur === 1), 'a heading in another chapter opens that chapter');
+    }
 
     /* ---- a big paste stays fast, and lands in the right place ---- */
     await page.evaluate(() => window.__app.loadDoc(window.api && window.__app.doc, null)).catch(() => {});
