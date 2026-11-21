@@ -22,6 +22,8 @@ const DEFAULT_PREFS = {
   sound: false,
   goal: 0, // daily word goal, 0 = off
   fullscreen: true,
+  centerCaret: true, // text slides sideways so the caret stays in the middle
+  accent: 'amber',
   recent: [],
   lastPath: null,
 };
@@ -164,22 +166,39 @@ ipcMain.handle('doc:open-dialog', async () => {
 });
 ipcMain.handle('doc:open-path', (e, p) => readDoc(p));
 
-ipcMain.handle('doc:save', async (e, { path: p, text, suggested, saveAs }) => {
-  if (!p || saveAs) {
-    const r = await dialog.showSaveDialog(win, {
-      title: 'Save',
-      defaultPath: p && saveAs ? p : path.join(app.getPath('documents'), safeName(suggested) + '.draft'),
-      filters: [{ name: 'Draft document', extensions: ['draft'] }],
-    });
-    if (r.canceled || !r.filePath) return null;
-    p = r.filePath.toLowerCase().endsWith('.draft') ? r.filePath : r.filePath + '.draft';
-  }
+const revisionOf = (p) => { const m = path.basename(p || '').match(/_v(\d+)\.draft$/i); return m ? +m[1] : 1; };
+
+ipcMain.handle('doc:save', async (e, { path: p, text, suggested, saveAs, newVersion, base, revision }) => {
   try {
+    // "Save version": write the next numbered file next to the current one, without asking.
+    if (p && newVersion && !saveAs) {
+      const dir = path.dirname(p);
+      const stemName = path.basename(p, path.extname(p));
+      const m = stemName.match(/^(.*)_v(\d+)$/i);
+      const b = base || (m ? m[1] : stemName);
+      let n = Math.max(revision || 1, m ? +m[2] : 1);
+      let np;
+      do { n++; np = path.join(dir, b + '_v' + n + '.draft'); } while (fs.existsSync(np));
+      atomicWrite(np, text);
+      snapshot(np, text);
+      addRecent(np);
+      fs.unlink(recoveryFile(), () => {});
+      return { path: np, revision: n };
+    }
+    if (!p || saveAs) {
+      const r = await dialog.showSaveDialog(win, {
+        title: 'Save',
+        defaultPath: p && saveAs ? p : path.join(app.getPath('documents'), safeName(suggested) + '.draft'),
+        filters: [{ name: 'Draft document', extensions: ['draft'] }],
+      });
+      if (r.canceled || !r.filePath) return null;
+      p = r.filePath.toLowerCase().endsWith('.draft') ? r.filePath : r.filePath + '.draft';
+    }
     atomicWrite(p, text);
     snapshot(p, text);
     addRecent(p);
     fs.unlink(recoveryFile(), () => {});
-    return { path: p };
+    return { path: p, revision: revisionOf(p) };
   } catch (err) {
     dialog.showErrorBox('Could not save', err.message);
     return null;
@@ -224,6 +243,7 @@ ipcMain.handle('ui:confirm', async (e, { message, detail, buttons }) => {
 ipcMain.handle('ui:error', (e, { message }) => dialog.showMessageBox(win, { type: 'error', message, buttons: ['OK'] }).then(() => true));
 ipcMain.handle('win:fullscreen', () => { if (!win) return false; win.setFullScreen(!win.isFullScreen()); return !win.isFullScreen(); });
 ipcMain.on('win:title', (e, t) => { if (win) win.setTitle(t); });
+ipcMain.on('win:close', () => { if (win && !win.isDestroyed()) win.close(); });
 ipcMain.on('win:close-now', () => { allowClose = true; if (win && !win.isDestroyed()) win.close(); });
 ipcMain.on('shell:show', (e, p) => shell.showItemInFolder(p));
 

@@ -23,6 +23,9 @@
   let saving = false;
   let wordCounts = []; // cached words per chapter
   let activeNote = null;
+  let revision = 1; // number in the file name: title_v1.draft, title_v2.draft ...
+  let shiftX = 0; // horizontal slide of the line being written
+  let liveEl = null; // the paragraph being written: shown as one line that slides under the caret
 
   /* ============================ helpers ============================ */
   let toastTimer;
@@ -38,6 +41,15 @@
   const todayKey = () => new Date().toISOString().slice(0, 10);
 
   /* ============================ preferences ============================ */
+  // Accent colors: caret, note underline, selection and the soft light. [light theme, dark theme, light glow, dark glow]
+  const ACCENTS = {
+    amber: { name: 'Amber', l: '181 101 29', d: '232 165 90', gl: '255 224 150', gd: '255 190 100' },
+    rose: { name: 'Rose', l: '176 72 90', d: '232 130 150', gl: '255 205 215', gd: '255 150 170' },
+    sage: { name: 'Sage', l: '83 125 94', d: '140 190 150', gl: '205 235 210', gd: '140 200 160' },
+    ocean: { name: 'Ocean', l: '52 107 150', d: '120 175 220', gl: '195 222 245', gd: '110 170 225' },
+    plum: { name: 'Plum', l: '128 85 150', d: '190 150 215', gl: '226 206 240', gd: '170 130 200' },
+    slate: { name: 'Slate', l: '90 90 95', d: '190 190 195', gl: '226 226 231', gd: '200 200 210' },
+  };
   function savePrefs(patch) {
     Object.assign(prefs, patch);
     window.api.setPrefs(patch);
@@ -47,6 +59,19 @@
     const dark = prefs.theme === 'dark' || (prefs.theme === 'system' && systemDark);
     document.body.classList.toggle('dark', dark);
     document.body.dataset.font = prefs.font;
+    const ac = ACCENTS[prefs.accent] || ACCENTS.amber;
+    document.body.style.setProperty('--accent', dark ? ac.d : ac.l);
+    document.body.style.setProperty('--glow', dark ? ac.gd : ac.gl);
+    const sw = $('.swatches');
+    if (sw && sw.children.length !== Object.keys(ACCENTS).length) {
+      sw.innerHTML = '';
+      Object.keys(ACCENTS).forEach((id) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.dataset.v = id; b.title = ACCENTS[id].name; b.setAttribute('aria-label', ACCENTS[id].name);
+        sw.appendChild(b);
+      });
+    }
+    if (sw) $$('button', sw).forEach((b) => { const a = ACCENTS[b.dataset.v]; b.style.background = 'rgb(' + (dark ? a.d : a.l) + ')'; });
     root.style.setProperty('--fs', prefs.size + 'px');
     root.style.setProperty('--measure', prefs.measure + 'px');
     root.style.setProperty('--anchor', prefs.anchor);
@@ -57,7 +82,7 @@
     // settings panel
     $$('[data-pref]').forEach((el) => {
       const k = el.dataset.pref;
-      if (el.classList.contains('seg')) $$('button', el).forEach((b) => b.classList.toggle('on', b.dataset.v === String(prefs[k])));
+      if (el.classList.contains('seg') || el.classList.contains('swatches')) $$('button', el).forEach((b) => b.classList.toggle('on', b.dataset.v === String(prefs[k])));
       else if (el.type === 'checkbox') el.checked = !!prefs[k];
       else if (document.activeElement !== el) el.value = prefs[k];
     });
@@ -151,6 +176,7 @@
     return doc;
   }
   function renderChapter() {
+    liveEl = null; shiftX = 0;
     editor.innerHTML = blocksToHtml(doc.chapters[cur].blocks);
     scroller.scrollTop = 0;
     if (reading) layoutGutter();
@@ -172,11 +198,14 @@
     doc = d;
     cur = 0;
     filePath = path || null;
+    revision = path ? revisionFromPath(path) : 1;
     wordCounts = doc.chapters.map((c) => D.countWords(c.blocks));
     renderChapter();
     dirty = !!opts.dirty;
     if (!reading) { editor.focus(); placeCaretAtEnd(); kick(true); }
     renderOutline();
+    $('#docTitle').value = doc.title || '';
+    updateFileHint();
     updateTitle();
     updateStatus();
     setSaveState(dirty ? 'Not saved yet' : path ? 'Saved' : '');
@@ -202,19 +231,39 @@
   }
   function setSaveState(s) { $('#saveState').textContent = s; }
 
-  async function save(saveAs) {
+  /* ---- names: the title gives the file names ---- */
+  function firstHeading() {
+    for (const c of doc.chapters) for (const b of c.blocks) if (b.t === 'h1' && D.blockText(b).trim()) return D.blockText(b).trim();
+    return '';
+  }
+  function docTitle() {
+    return (doc.title || '').trim() || firstHeading() || doc.chapters[0].title.trim() || firstWords() || 'Untitled';
+  }
+  const revisionFromPath = (p) => { const m = baseName(p).match(/_v(\d+)\.draft$/i); return m ? +m[1] : 1; };
+  const draftName = () => D.slugify(docTitle()) + '_v' + revision + '.draft';
+  function updateFileHint() {
+    const h = $('#fileHint');
+    if (h) h.textContent = filePath ? baseName(filePath) : draftName();
+  }
+
+  // mode: 'save' (in place; asks only the first time), 'version' (next numbered file, no questions), 'as' (choose a name)
+  async function save(mode) {
     snapshotDoc();
     setSaveState('Saving…');
+    if (mode === 'version' && filePath) await autosave(); // the old version stays exactly as it was
     const r = await window.api.save({
-      path: filePath, saveAs: !!saveAs, text: D.serializeDraft(doc),
-      suggested: doc.title || doc.chapters[0].title || firstWords() || 'Untitled',
+      path: filePath, saveAs: mode === 'as', newVersion: mode === 'version' && !!filePath,
+      text: D.serializeDraft(doc), suggested: D.slugify(docTitle()) + '_v' + revision,
+      base: D.slugify(docTitle()), revision,
     });
     if (!r) { setSaveState(dirty ? 'Not saved yet' : 'Saved'); return false; }
     filePath = r.path;
+    revision = r.revision || revisionFromPath(r.path);
     dirty = false;
     updateTitle();
+    updateFileHint();
     setSaveState('Saved');
-    toast('Saved');
+    toast(mode === 'version' ? 'Saved as ' + baseName(r.path) : 'Saved');
     window.api.recoveryClear();
     editor.focus();
     return true;
@@ -251,7 +300,7 @@
       detail: 'A recovery copy is kept, but starting something else will replace it.',
       buttons: ['Save…', 'Discard', 'Cancel'],
     });
-    if (c === 0) return save(false);
+    if (c === 0) return save('save');
     return c === 1;
   }
   async function doNew() {
@@ -326,21 +375,53 @@
     if (wantScroll) follow = true;
     if (!raf) raf = requestAnimationFrame(tick);
   }
+  // The paragraph you are writing is shown as a single line that slides sideways, so the caret stays in the
+  // middle of the screen. Every other paragraph stays exactly where it is.
+  function setLive(el) {
+    if (liveEl && !editor.contains(liveEl)) liveEl = null;
+    if (el === liveEl) return;
+    if (liveEl) { liveEl.classList.remove('live'); liveEl.style.transform = ''; }
+    liveEl = el;
+    shiftX = 0;
+    if (el) el.classList.add('live');
+  }
+  function setShift(v) {
+    shiftX = v;
+    if (liveEl) liveEl.style.transform = v ? 'translateX(' + Math.round(v) + 'px)' : '';
+  }
+  // Vertical: the writing line stays at one height. Horizontal: the line you are writing slides under the caret.
   function tick() {
     raf = 0;
+    const focused = !reading && document.activeElement === editor;
+    const canFollow = follow && focused;
+    if (!(focused && prefs.centerCaret)) setLive(null);
+    else if (canFollow && getSelection().isCollapsed) setLive(currentBlock());
     const r = caretRect();
     if (!r) return;
     const mid = r.top + r.height / 2;
     glow.style.setProperty('--ly', mid + 'px');
-    if (!follow || reading || !prefs.typewriter || document.activeElement !== editor) { follow = false; return; }
-    const anchorY = innerHeight * prefs.anchor / 100;
-    const max = scroller.scrollHeight - scroller.clientHeight;
-    const target = Math.max(0, Math.min(max, scroller.scrollTop + mid - anchorY));
-    const d = target - scroller.scrollTop;
-    if (Math.abs(d) < 1) { scroller.scrollTop = target; follow = false; return; }
-    scroller.scrollTop += d * 0.24;
-    raf = requestAnimationFrame(tick);
+    let more = false;
+
+    if (canFollow && prefs.typewriter) {
+      const anchorY = innerHeight * prefs.anchor / 100;
+      const max = scroller.scrollHeight - scroller.clientHeight;
+      const target = Math.max(0, Math.min(max, scroller.scrollTop + mid - anchorY));
+      const d = target - scroller.scrollTop;
+      if (Math.abs(d) < 1) scroller.scrollTop = target;
+      else { scroller.scrollTop += d * 0.24; more = true; }
+    }
+
+    let tx = shiftX;
+    if (!liveEl) tx = 0;
+    else if (canFollow) tx = innerWidth / 2 - (r.left - shiftX);
+    const dx = tx - shiftX;
+    if (Math.abs(dx) < 0.6) { if (shiftX !== tx) setShift(tx); }
+    else { setShift(shiftX + dx * 0.3); more = true; }
+
+    if (more) raf = requestAnimationFrame(tick);
+    else if (canFollow) follow = false;
   }
+  scroller.addEventListener('scroll', () => { if (scroller.scrollLeft) scroller.scrollLeft = 0; });
 
   /* ============================ formatting ============================ */
   function currentBlock() {
@@ -605,7 +686,7 @@
     snapshotDoc();
     toast('Preparing ' + format.toUpperCase() + '…');
     const r = await window.api.exportDoc({
-      format, doc, suggested: filePath ? stem(filePath) : doc.title || firstWords() || 'Untitled',
+      format, doc, suggested: docTitle(),
       opts: { notes: $('#exportNotes').checked, font: prefs.font, author: doc.author || undefined },
     });
     if (r && r.error) await window.api.error('Export failed: ' + r.error);
@@ -651,11 +732,22 @@
     $('#outline').hidden = true;
   }
   const anyPanelOpen = () => ['#exportMenu', '#settings', '#outline', '#notePop', '#modal'].some((s) => !$(s).hidden);
-  function toggle(sel) {
+  function placePopover(pop, btn, align) {
+    const b = btn.getBoundingClientRect();
+    const w = pop.offsetWidth;
+    const left = align === 'right' ? b.right - w : b.left;
+    pop.style.left = Math.max(8, Math.min(left, innerWidth - w - 8)) + 'px';
+    pop.style.right = 'auto';
+    pop.style.top = (b.bottom + 8) + 'px';
+  }
+  function toggle(sel, btnSel, align) {
     const open = !$(sel).hidden;
     closePanels();
     $(sel).hidden = open;
-    if (open && !reading) editor.focus();
+    if (!open) {
+      showChrome();
+      if (btnSel) placePopover($(sel), $(btnSel), align);
+    } else if (!reading) editor.focus();
   }
 
   /* ============================ chrome visibility ============================ */
@@ -715,7 +807,11 @@
       return;
     }
     if (!ctrl) return;
-    if (e.altKey) { if (k === 'm') { e.preventDefault(); addNote(); } return; }
+    if (e.altKey) {
+      if (k === 'm') { e.preventDefault(); addNote(); }
+      else if (k === 's') { e.preventDefault(); save('as'); }
+      return;
+    }
     const shift = e.shiftKey;
     switch (k) {
       case 'b': e.preventDefault(); command('bold'); break;
@@ -725,12 +821,12 @@
       case '2': e.preventDefault(); command('h2'); break;
       case '0': e.preventDefault(); if (!reading) { document.execCommand('formatBlock', false, 'p'); if (inQuote()) document.execCommand('outdent'); afterEdit(); } break;
       case 'q': if (shift) { e.preventDefault(); command('quote'); } break;
-      case 's': e.preventDefault(); save(shift); break;
+      case 's': e.preventDefault(); save(shift ? 'version' : 'save'); break;
       case 'o': e.preventDefault(); if (shift) toggle('#outline'); else doOpen(); break;
       case 'n': e.preventDefault(); doNew(); break;
-      case 'e': e.preventDefault(); toggle('#exportMenu'); break;
+      case 'e': e.preventDefault(); toggle('#exportMenu', '#btnExport'); break;
       case 'r': e.preventDefault(); setReading(!reading); break;
-      case ',': e.preventDefault(); toggle('#settings'); break;
+      case ',': e.preventDefault(); toggle('#settings', '#btnSettings', 'right'); break;
       case 'pagedown': e.preventDefault(); selectChapter(cur + 1); break;
       case 'pageup': e.preventDefault(); selectChapter(cur - 1); break;
       default: break;
@@ -745,7 +841,10 @@
   editor.addEventListener('keyup', (e) => {
     if (/^(Arrow|Page|Home|End)/.test(e.key)) kick(true);
   });
-  document.addEventListener('selectionchange', () => { updateActive(); kick(false); });
+  document.addEventListener('selectionchange', () => {
+    if (liveEl && (!editor.contains(liveEl) || currentBlock() !== liveEl)) setLive(null);
+    updateActive(); kick(false);
+  });
   editor.addEventListener('paste', (e) => {
     e.preventDefault();
     if (reading) return;
@@ -768,13 +867,16 @@
   $('#btnChapters').addEventListener('click', () => toggle('#outline'));
   $('#btnNew').addEventListener('click', doNew);
   $('#btnOpen').addEventListener('click', doOpen);
-  $('#btnSave').addEventListener('click', () => save(false));
-  $('#btnExport').addEventListener('click', () => toggle('#exportMenu'));
+  $('#btnSave').addEventListener('click', () => save('save'));
+  $('#btnVersion').addEventListener('click', () => save('version'));
+  $('#btnExport').addEventListener('click', () => toggle('#exportMenu', '#btnExport'));
   $('#btnVersions').addEventListener('click', openVersions);
   $('#btnRead').addEventListener('click', () => setReading(!reading));
   $('#btnTheme').addEventListener('click', () => savePrefs({ theme: { system: 'light', light: 'dark', dark: 'system' }[prefs.theme] }));
-  $('#btnSettings').addEventListener('click', () => toggle('#settings'));
+  $('#btnSettings').addEventListener('click', () => toggle('#settings', '#btnSettings', 'right'));
   $('#btnFull').addEventListener('click', () => window.api.toggleFullscreen());
+  $('#btnClose').addEventListener('click', () => window.api.close());
+  $('#docTitle').addEventListener('input', (e) => { doc.title = e.target.value; markDirty(); updateFileHint(); });
   $('#outlineClose').addEventListener('click', closeOutline);
   $('#addChapter').addEventListener('click', addChapter);
   $('#modalClose').addEventListener('click', () => { $('#modal').hidden = true; });
@@ -799,7 +901,7 @@
   // Settings controls
   $$('[data-pref]').forEach((el) => {
     const k = el.dataset.pref;
-    if (el.classList.contains('seg')) $$('button', el).forEach((b) => b.addEventListener('click', () => savePrefs({ [k]: b.dataset.v })));
+    if (el.classList.contains('seg') || el.classList.contains('swatches')) el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) savePrefs({ [k]: b.dataset.v }); });
     else if (el.type === 'checkbox') el.addEventListener('change', () => savePrefs({ [k]: el.checked }));
     else if (el.type === 'range') el.addEventListener('input', () => savePrefs({ [k]: +el.value }));
     else if (el.type === 'number') el.addEventListener('change', () => savePrefs({ [k]: Math.max(0, +el.value || 0) }));

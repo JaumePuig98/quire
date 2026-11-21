@@ -24,7 +24,8 @@
   <span class="sep"></span>
   <button type="button" id="btnNew" title="New (Ctrl+N)">New</button>
   <button type="button" id="btnOpen" title="Open (Ctrl+O)">Open</button>
-  <button type="button" id="btnSave" title="Save (Ctrl+S) · Save as (Ctrl+Shift+S)">Save</button>
+  <button type="button" id="btnSave" title="Save (Ctrl+S). Save as: Ctrl+Alt+S">Save</button>
+  <button type="button" id="btnVersion" title="Save a new numbered version next to this file (Ctrl+Shift+S)">Version</button>
   <button type="button" id="btnExport" title="Export (Ctrl+E)">Export</button>
   <button type="button" id="btnVersions" title="Earlier versions">History</button>
   <span class="grow"></span>
@@ -32,6 +33,7 @@
   <button type="button" id="btnTheme" title="Light / dark / automatic">Theme</button>
   <button type="button" id="btnSettings" title="Settings (Ctrl+,)">Settings</button>
   <button type="button" id="btnFull" title="Full screen (F11)">Full screen</button>
+  <button type="button" id="btnClose" title="Close the app (Alt+F4)">Close</button>
 </header>
 
 <!-- Formatting bar: always visible -->
@@ -54,6 +56,8 @@
 <!-- Chapters -->
 <aside id="outline" aria-label="Chapters" hidden>
   <div class="panel-head"><strong>Chapters</strong><button type="button" id="outlineClose" aria-label="Close">Close</button></div>
+  <label class="small" for="docTitle">Title <span id="fileHint"></span></label>
+  <input id="docTitle" type="text" placeholder="Title of the book or document" autocomplete="off">
   <ol id="chapterList"></ol>
   <button type="button" id="addChapter" class="wide">Add chapter</button>
   <p class="small">Click a chapter to open it. Chapters become new pages in Word and PDF exports.</p>
@@ -73,12 +77,14 @@
   <h2>Settings</h2>
   <div class="row"><span>Theme</span>
     <div class="seg" data-pref="theme"><button type="button" data-v="system">Auto</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></div></div>
+  <div class="row"><span>Accent color</span><div class="swatches" data-pref="accent" role="group" aria-label="Accent color"></div></div>
   <div class="row"><span>Font</span>
     <div class="seg" data-pref="font"><button type="button" data-v="serif">Serif</button><button type="button" data-v="sans">Sans</button></div></div>
   <div class="row"><span>Text size</span><input type="range" min="17" max="34" step="1" data-pref="size"><output data-out="size"></output></div>
   <div class="row"><span>Column width</span><input type="range" min="480" max="940" step="10" data-pref="measure"><output data-out="measure"></output></div>
   <div class="row"><span>Writing line height</span><input type="range" min="45" max="82" step="1" data-pref="anchor"><output data-out="anchor"></output></div>
   <label class="check"><input type="checkbox" data-pref="typewriter"> Keep the writing line in place (typewriter scrolling)</label>
+  <label class="check"><input type="checkbox" data-pref="centerCaret"> Keep the caret centered (the line you write slides under it)</label>
   <label class="check"><input type="checkbox" data-pref="fade"> Fade earlier text</label>
   <label class="check"><input type="checkbox" data-pref="glow"> Soft light at the writing line</label>
   <label class="check"><input type="checkbox" data-pref="sound"> Typewriter sounds</label>

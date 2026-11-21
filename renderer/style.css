@@ -95,6 +95,14 @@ button.on{background:rgb(var(--ink)/.12)}
   background:rgb(var(--bg)/.9);border:1px solid rgb(var(--line));border-radius:10px;
 }
 #readbar{padding:7px 14px;font-size:12.5px;gap:8px}
+#editor .live{white-space:pre;width:max-content;min-width:100%}
+.swatches{display:flex;gap:8px}
+.swatches button{width:24px;height:24px;min-width:24px;padding:0;border-radius:50%;border:2px solid transparent;box-shadow:inset 0 0 0 1px rgb(0 0 0/.12)}
+.swatches button:hover{background-clip:padding-box}
+.swatches button.on{border-color:rgb(var(--ink))}
+#docTitle{width:100%;margin:4px 0 12px;padding:7px 9px;border:1px solid rgb(var(--line));border-radius:8px;background:rgb(var(--bg));color:inherit;font:13.5px var(--sans)}
+#fileHint{float:right;color:rgb(var(--muted))}
+#btnClose:hover{background:rgb(190 60 60/.16)}
 body.reading #fmtbar{display:none}
 #status,#saveState{position:fixed;z-index:5;bottom:24px;font-size:12px;color:rgb(var(--muted));transition:opacity .35s}
 #status{left:28px;max-width:28vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -107,6 +115,21 @@ body.typing #status,body.typing #saveState{opacity:.55}
   background:rgb(var(--panel));border:1px solid rgb(var(--line));border-radius:12px;box-shadow:0 10px 30px rgb(0 0 0/.12);font-size:13px;
 }
 @media (max-width:960px){.popover{right:16px}}
+/* Narrow windows: drop the shortcut hints, wrap the menu, lift the status line above the bar */
+@media (max-width:900px){
+  #fmtbar .hint{display:none}
+  #topbar{flex-wrap:wrap;justify-content:center;row-gap:2px}
+  #topbar .grow{display:none}
+  #status,#saveState{bottom:64px;max-width:60vw}
+  #status{left:20px}
+  #saveState{right:20px}
+}
+@media (max-width:560px){
+  #fmtbar{padding:3px 4px}
+  #fmtbar button{padding:0 7px}
+  #topbar{padding:3px 4px}
+  #topbar button{padding:0 7px}
+}
 .popover.wide{width:380px;padding:14px}
 .popover h2{margin:0 0 10px;font-size:14px}
 #exportMenu button{width:100%;justify-content:space-between;height:34px;padding:0 10px}

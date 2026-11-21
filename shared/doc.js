@@ -46,6 +46,13 @@
     return out;
   }
 
+  // File-name friendly version of a title: "Mi Novela: Capítulo 1" -> "mi-novela-capitulo-1"
+  function slugify(s) {
+    const out = String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/g, '');
+    return out || 'untitled';
+  }
+
   /* ---------- .draft file ---------- */
   function validate(doc) {
     if (!doc || doc.format !== FORMAT) throw new Error('This is not a .draft document.');
@@ -234,7 +241,7 @@
   }
 
   return {
-    FORMAT, VERSION, uid, now, newDoc, newChapter, blockText, countWords, countDoc, normalizeRuns, validate,
+    FORMAT, VERSION, slugify, uid, now, newDoc, newChapter, blockText, countWords, countDoc, normalizeRuns, validate,
     parseDraft, serializeDraft, usedNoteIds, orderedNotes, headingPlan, blockLevel,
     toMarkdown, toPlainText, fromMarkdown, parseInlineMd,
   };

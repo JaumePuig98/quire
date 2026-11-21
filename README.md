@@ -38,7 +38,9 @@ release. You can also run it by hand from the repo's **Actions** tab.
 | Reading mode (read-only, notes in the margin) | Ctrl+R |
 | Chapters panel | Ctrl+Shift+O |
 | Next / previous chapter | Ctrl+PageDown / Ctrl+PageUp |
-| New / open / save / save as | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S |
+| New / open / save | Ctrl+N / Ctrl+O / Ctrl+S |
+| Save a new version (`title_v2.draft`, no questions asked) | Ctrl+Shift+S |
+| Save as (pick a name) | Ctrl+Alt+S |
 | Export | Ctrl+E |
 | Settings | Ctrl+, |
 | Full screen | F11 |
@@ -47,6 +49,18 @@ Move the mouse to show the menu bar. It hides again while you type. The formatti
 
 Settings: light/dark/automatic theme, serif or sans font, text size, column width, the height of the writing line,
 typewriter scrolling, fading of earlier text, the soft light, typewriter sounds, and an optional daily word goal (off by default).
+
+## File names and versions
+
+- **Export** (Word, PDF, Markdown, text) suggests your main title as the file name; you can edit it in the dialog.
+- **.draft files** are named from the title: `my-great-novel_v1.draft`. Ctrl+S saves in place. The **Version** button (Ctrl+Shift+S) writes the next file, `_v2`, `_v3`, ... next to it without asking, and you keep writing in the new one. Older versions stay untouched.
+- Set the title in the Chapters panel (the Title field).
+
+## Settings worth knowing
+
+- **Keep the caret centered**: the line you are writing slides sideways so the caret stays in the middle; the paragraphs above do not move. On by default.
+- **Accent color**: six soft colors (Amber, Rose, Sage, Ocean, Plum, Slate).
+- In a narrow window the shortcut hints in the bottom bar are hidden to save space.
 
 ## Files
 

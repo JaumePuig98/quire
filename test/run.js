@@ -6,6 +6,9 @@ const D = require('../shared/doc.js');
 const X = require('../exporters.js');
 
 (async () => {
+  assert.strictEqual(D.slugify('My Great Novel: Part 1'), 'my-great-novel-part-1');
+  assert.strictEqual(D.slugify('  Él cuervo & la luna!  '), 'el-cuervo-la-luna');
+  assert.strictEqual(D.slugify('???'), 'untitled');
   const doc = D.newDoc();
   doc.title = 'Test book';
   doc.chapters[0].title = 'The Lamp';

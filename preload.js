@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('api', {
   error: (message) => ipcRenderer.invoke('ui:error', { message }),
   toggleFullscreen: () => ipcRenderer.invoke('win:fullscreen'),
   setTitle: (t) => ipcRenderer.send('win:title', t),
+  close: () => ipcRenderer.send('win:close'),
   closeNow: () => ipcRenderer.send('win:close-now'),
   showInFolder: (p) => ipcRenderer.send('shell:show', p),
   versionsList: (p) => ipcRenderer.invoke('versions:list', p),
