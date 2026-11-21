@@ -47,7 +47,7 @@ async function toDocx(doc, opts) {
       const lines = r.text.split('\n');
       lines.forEach((line, li) => {
         out.push(new TextRun({
-          text: line, bold: !!r.b, italics: !!r.i || block.t === 'quote', underline: r.u ? {} : undefined,
+          text: line, bold: !!r.b, italics: !!r.i || (block.t === 'quote' && !D.isCite(block)), underline: r.u ? {} : undefined,
           break: li > 0 ? 1 : undefined,
         }));
       });
@@ -73,8 +73,8 @@ async function toDocx(doc, opts) {
       if (!D.blockText(b).trim()) continue;
       const lvl = D.blockLevel(b, plan.shift);
       if (lvl) children.push(new Paragraph({ heading: heading(lvl), children: runsFor(b) }));
-      else if (b.t === 'quote') children.push(new Paragraph({ style: 'Quote', children: runsFor(b) }));
-      else children.push(new Paragraph({ children: runsFor(b) }));
+      else if (b.t === 'quote') children.push(new Paragraph({ style: 'Quote', alignment: D.isCite(b) ? AlignmentType.RIGHT : AlignmentType.LEFT, children: runsFor(b) }));
+      else children.push(new Paragraph({ alignment: opts.justify === false ? undefined : AlignmentType.JUSTIFIED, children: runsFor(b) }));
     }
   });
   if (!children.length) children.push(new Paragraph({ children: [] }));
@@ -99,8 +99,8 @@ async function toDocx(doc, opts) {
         hd('Heading3', 'Heading 3', 26, 300, 120),
         {
           id: 'Quote', name: 'Quote', basedOn: 'Normal', quickFormat: true,
-          run: { italics: true },
-          paragraph: { indent: { left: 720, right: 720 }, keepLines: true },
+          run: { italics: true, size: 22 },
+          paragraph: { indent: { left: 3400 }, spacing: { before: 0, after: 40 }, keepLines: true, keepNext: false },
         },
       ],
     },
@@ -148,7 +148,7 @@ function toHtml(doc, opts) {
       if (!D.blockText(b).trim()) continue;
       const lvl = D.blockLevel(b, plan.shift);
       if (lvl) body += '<h' + Math.min(lvl, 3) + '>' + inline(b) + '</h' + Math.min(lvl, 3) + '>';
-      else if (b.t === 'quote') body += '<blockquote>' + inline(b) + '</blockquote>';
+      else if (b.t === 'quote') body += '<blockquote' + (D.isCite(b) ? ' class="cite"' : '') + '>' + inline(b) + '</blockquote>';
       else body += '<p>' + inline(b) + '</p>';
     }
     body += '</section>';
@@ -176,13 +176,15 @@ function toHtml(doc, opts) {
     '@page{size:A4;margin:25mm}\n' +
     'html{font-family:' + f.css + ';font-size:11.5pt;line-height:1.55;color:#111}\n' +
     'body{margin:0;orphans:3;widows:3;hyphens:manual}\n' +
-    'p{margin:0 0 .75em;orphans:3;widows:3}\n' +
+    'p{margin:0 0 .75em;orphans:3;widows:3' + (opts.justify === false ? '' : ';text-align:justify') + '}\n' +
     'h1,h2,h3{font-weight:700;line-height:1.25;break-after:avoid;break-inside:avoid;page-break-after:avoid}\n' +
     'h1{font-size:21pt;margin:0 0 .9em}\n' +
     'h2{font-size:15pt;margin:1.5em 0 .5em}\n' +
     'h3{font-size:12.5pt;margin:1.3em 0 .4em}\n' +
     'h1+*,h2+*,h3+*{break-before:avoid}\n' +
-    'blockquote{margin:1em 0 1em 1.6em;padding:0;font-style:italic;break-inside:avoid;page-break-inside:avoid}\n' +
+    'blockquote{margin:0 0 .2em 38%;padding:0;font-size:.92em;font-style:italic;break-inside:avoid;page-break-inside:avoid}\n' +
+    'blockquote.cite{font-style:normal;text-align:right}\n' +
+    ':not(blockquote)+blockquote,blockquote+:not(blockquote){margin-top:1em}\n' +
     '.newpage{break-before:page;page-break-before:always}\n' +
     '.nref{font-size:.7em;line-height:0;color:#555}\n' +
     '.notes ol{padding-left:1.4em}.notes li{margin:0 0 .5em;break-inside:avoid}\n' +

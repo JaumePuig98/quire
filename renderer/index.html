@@ -24,19 +24,25 @@
   <span class="sep"></span>
   <button type="button" id="btnNew" title="New (Ctrl+N)">New</button>
   <button type="button" id="btnOpen" title="Open (Ctrl+O)">Open</button>
-  <button type="button" id="btnSave" title="Save (Ctrl+S). Save as: Ctrl+Alt+S">Save</button>
-  <button type="button" id="btnVersion" title="Save a new numbered version next to this file (Ctrl+Shift+S)">Version</button>
+  <button type="button" id="btnSave" title="Save (Ctrl+S). Save as: Ctrl+Shift+S">Save</button>
   <button type="button" id="btnExport" title="Export (Ctrl+E)">Export</button>
   <button type="button" id="btnVersions" title="Earlier versions">History</button>
   <span class="grow"></span>
-  <button type="button" id="btnRead" title="Reading mode (Ctrl+R)">Read</button>
-  <button type="button" id="btnTheme" title="Light / dark / automatic">Theme</button>
+  <div id="modeWrap">
+    <button type="button" id="btnMode" aria-haspopup="menu" aria-expanded="false" title="Writing, review or reading mode">Mode: Writing</button>
+    <div id="modeMenu" role="menu" aria-label="Mode">
+      <button type="button" role="menuitemradio" data-mode="write" aria-checked="true"><span class="tick">&#10003;</span>Writing<span class="hint">&nbsp;</span></button>
+      <button type="button" role="menuitemradio" data-mode="review" aria-checked="false" title="Typos and notes stand out, nothing slides (Ctrl+Shift+R)"><span class="tick">&#10003;</span>Review<span class="hint">Ctrl+Shift+R</span></button>
+      <button type="button" role="menuitemradio" data-mode="read" aria-checked="false" title="Read-only (Ctrl+R)"><span class="tick">&#10003;</span>Read<span class="hint">Ctrl+R</span></button>
+    </div>
+  </div>
   <button type="button" id="btnSettings" title="Settings (Ctrl+,)">Settings</button>
   <button type="button" id="btnFull" title="Full screen (F11)">Full screen</button>
   <button type="button" id="btnClose" title="Close the app (Alt+F4)">Close</button>
 </header>
 
-<!-- Formatting bar: always visible -->
+<!-- Formatting bar: visible by default; the small button next to it hides it -->
+<div id="fmtdock">
 <div id="fmtbar" aria-label="Formatting">
   <button type="button" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b><span class="hint">Ctrl+B</span></button>
   <button type="button" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i><span class="hint">Ctrl+I</span></button>
@@ -47,6 +53,24 @@
   <button type="button" data-cmd="quote" title="Quote (Ctrl+Shift+Q)">Quote<span class="hint">Ctrl+Shift+Q</span></button>
   <span class="sep"></span>
   <button type="button" data-cmd="note" title="Add a note to the selected text (Ctrl+Alt+M)">Note<span class="hint">Ctrl+Alt+M</span></button>
+</div>
+<button type="button" id="fmtToggle" aria-controls="fmtbar" aria-expanded="true" title="Hide the formatting bar (Ctrl+/)">&#8964;</button>
+</div>
+<div id="findbar" role="search" aria-label="Find and replace" hidden>
+  <div class="frow">
+    <input id="findInput" type="text" placeholder="Find" aria-label="Find" autocomplete="off" spellcheck="false">
+    <span id="findCount" aria-live="polite"></span>
+    <button type="button" id="findPrev" title="Previous match (Shift+Enter)" aria-label="Previous match">&#8593;</button>
+    <button type="button" id="findNext" title="Next match (Enter)" aria-label="Next match">&#8595;</button>
+    <button type="button" id="findCase" title="Match case" aria-pressed="false">Aa</button>
+    <button type="button" id="findClose" title="Close (Esc)" aria-label="Close find">&#10005;</button>
+  </div>
+  <div class="frow" id="replaceRow">
+    <input id="replaceInput" type="text" placeholder="Replace with" aria-label="Replace with" autocomplete="off" spellcheck="false">
+    <button type="button" id="replaceOne">Replace</button>
+    <button type="button" id="replaceAll">All</button>
+  </div>
+  <label class="check"><input type="checkbox" id="findAllChapters"> Search all chapters</label>
 </div>
 <div id="readbar" hidden>Reading <span class="hint">Ctrl+R to write</span></div>
 
@@ -59,12 +83,13 @@
   <label class="small" for="docTitle">Title <span id="fileHint"></span></label>
   <input id="docTitle" type="text" placeholder="Title of the book or document" autocomplete="off">
   <ol id="chapterList"></ol>
+  <p id="bookTotal" class="small" aria-live="polite"></p>
   <button type="button" id="addChapter" class="wide">Add chapter</button>
   <p class="small">Click a chapter to open it. Chapters become new pages in Word and PDF exports.</p>
 </aside>
 
 <!-- Export -->
-<div id="exportMenu" class="popover" hidden>
+<div id="exportMenu" class="popover" role="dialog" aria-label="Export" hidden>
   <button type="button" data-format="docx">Word <span class="hint">.docx</span></button>
   <button type="button" data-format="pdf">PDF <span class="hint">A4 · .pdf</span></button>
   <button type="button" data-format="md">Markdown <span class="hint">.md</span></button>
@@ -73,27 +98,38 @@
 </div>
 
 <!-- Settings -->
-<div id="settings" class="popover wide" hidden>
+<div id="settings" class="popover wide" role="dialog" aria-label="Settings" hidden>
   <h2>Settings</h2>
   <div class="row"><span>Theme</span>
     <div class="seg" data-pref="theme"><button type="button" data-v="system">Auto</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></div></div>
   <div class="row"><span>Accent color</span><div class="swatches" data-pref="accent" role="group" aria-label="Accent color"></div></div>
   <div class="row"><span>Font</span>
     <div class="seg" data-pref="font"><button type="button" data-v="serif">Serif</button><button type="button" data-v="sans">Sans</button></div></div>
+  <label class="check"><input type="checkbox" data-pref="justify"> Justify text (quotes stay as they are)</label>
+  <button type="button" id="btnMoreSettings" class="linkbtn" aria-expanded="false">More settings &#9662;</button>
+  <div id="settingsMore" hidden>
+  <div class="row"><span>Text weight</span><input type="range" min="300" max="560" step="10" data-pref="weight"><output data-out="weight"></output></div>
   <div class="row"><span>Text size</span><input type="range" min="17" max="34" step="1" data-pref="size"><output data-out="size"></output></div>
   <div class="row"><span>Column width</span><input type="range" min="480" max="940" step="10" data-pref="measure"><output data-out="measure"></output></div>
   <div class="row"><span>Writing line height</span><input type="range" min="45" max="82" step="1" data-pref="anchor"><output data-out="anchor"></output></div>
   <label class="check"><input type="checkbox" data-pref="typewriter"> Keep the writing line in place (typewriter scrolling)</label>
-  <label class="check"><input type="checkbox" data-pref="centerCaret"> Keep the caret centered (the line you write slides under it)</label>
+  <div class="row"><span>Caret centering <small>(new text only)</small></span>
+    <div class="seg" data-pref="centerMode"><button type="button" data-v="off">Off</button><button type="button" data-v="soft">Soft</button><button type="button" data-v="strict">Strict</button></div></div>
+  <label class="check"><input type="checkbox" data-pref="fmtbar"> Show the formatting bar (Ctrl+/)</label>
   <label class="check"><input type="checkbox" data-pref="fade"> Fade earlier text</label>
   <label class="check"><input type="checkbox" data-pref="glow"> Soft light at the writing line</label>
   <label class="check"><input type="checkbox" data-pref="sound"> Typewriter sounds</label>
   <div class="row"><span>Daily word goal <small>(0 = off)</small></span><input type="number" min="0" max="100000" step="50" data-pref="goal"></div>
+  <div class="row"><span>Book target <small>(words, 0 = off)</small></span><input type="number" min="0" max="2000000" step="1000" data-pref="bookGoal"></div>
+  <label class="check"><input type="checkbox" data-pref="autoUpdate"> Check for updates automatically (installed version only)</label>
+  <div class="row"><span>Spellcheck language</span><select id="spellA" aria-label="Spellcheck language"></select></div>
+  <div class="row"><span>Also check</span><select id="spellB" aria-label="Second spellcheck language"></select></div>
+  </div>
   <p class="small">Ctrl+R reading mode · Ctrl+Alt+M note · Ctrl+Shift+O chapters · F11 full screen</p>
 </div>
 
 <!-- Note editor -->
-<div id="notePop" class="popover" hidden>
+<div id="notePop" class="popover" role="dialog" aria-label="Note" hidden>
   <label for="noteText" class="small">Note</label>
   <textarea id="noteText" rows="4" placeholder="Write a note about this passage"></textarea>
   <div class="actions"><button type="button" id="noteDelete">Delete note</button><span class="grow"></span><button type="button" id="noteSave" class="primary">Save note <span class="hint">Ctrl+Enter</span></button></div>

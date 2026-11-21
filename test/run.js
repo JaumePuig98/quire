@@ -6,9 +6,32 @@ const D = require('../shared/doc.js');
 const X = require('../exporters.js');
 
 (async () => {
+  // Damaged files must never crash the loader: they are repaired or reduced to what is readable.
+  const damaged = [
+    { chapters: [{ id: 'a', title: 'x', blocks: [{ t: 'p', runs: [{ text: 42 }] }] }] },
+    { chapters: [{ id: 'a', blocks: [{ t: 'script', runs: [{ text: 'hi', n: 'a"]x' }] }] }] },
+    { chapters: [{ id: 'a', blocks: [{ t: 'p', runs: [null] }] }] },
+    { chapters: [null, 5, 'x'] },
+    { chapters: [{ blocks: [null, 3] }] },
+    { chapters: 'nope', notes: 7 },
+    { chapters: [{ id: 'a', blocks: [] }, { id: 'a', blocks: [] }], notes: { bad: null, 'x y': { text: 't' }, ok: { text: 'fine' } } },
+  ];
+  for (const d of damaged) {
+    const v = D.validate(Object.assign({ format: 'draft', version: 1 }, d));
+    assert.ok(v.id && v.chapters.length >= 1 && v.chapters.every((c) => c.blocks.length >= 1));
+    assert.strictEqual(new Set(v.chapters.map((c) => c.id)).size, v.chapters.length);
+    D.toMarkdown(v, {}); D.toPlainText(v, {}); D.toMarkdown(D.parseDraft(D.serializeDraft(v)), {});
+  }
+  assert.deepStrictEqual(Object.keys(D.validate({ format: 'draft', version: 1, chapters: [], notes: { ok: { text: 'a' }, bad: 1, 'x y': { text: 'b' } } }).notes), ['ok']);
+  assert.throws(() => D.parseDraft('{"format":"other"}'));
+  assert.throws(() => D.parseDraft('not json'));
+  const idDoc = D.newDoc();
+  assert.strictEqual(D.parseDraft(D.serializeDraft(idDoc)).id, idDoc.id);
   assert.strictEqual(D.slugify('My Great Novel: Part 1'), 'my-great-novel-part-1');
   assert.strictEqual(D.slugify('  Él cuervo & la luna!  '), 'el-cuervo-la-luna');
   assert.strictEqual(D.slugify('???'), 'untitled');
+  assert.ok(D.isCite({ t: 'quote', runs: [{ text: ' \u2014 Author' }] }));
+  assert.ok(!D.isCite({ t: 'p', runs: [{ text: '- not a quote' }] }));
   const doc = D.newDoc();
   doc.title = 'Test book';
   doc.chapters[0].title = 'The Lamp';

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, nativeTheme, session, shell } = require('electron');
+const { screen, app, BrowserWindow, ipcMain, dialog, Menu, nativeTheme, session, shell } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -13,7 +13,7 @@ const FILE_EXTS = ['.draft', '.md', '.markdown', '.txt'];
 const DEFAULT_PREFS = {
   theme: 'system', // system | light | dark
   font: 'serif', // serif | sans
-  size: 22,
+  size: 22, weight: 400,
   measure: 680,
   anchor: 68, // % of the window height where the writing line sits
   typewriter: true,
@@ -22,7 +22,7 @@ const DEFAULT_PREFS = {
   sound: false,
   goal: 0, // daily word goal, 0 = off
   fullscreen: true,
-  centerCaret: true, // text slides sideways so the caret stays in the middle
+  centerMode: 'soft', justify: true, fmtbar: true, bookGoal: 0, autoUpdate: true, // text slides sideways so the caret stays in the middle
   accent: 'amber',
   recent: [],
   lastPath: null,
@@ -43,13 +43,39 @@ function atomicWrite(file, data) {
 const isDark = () => (prefs.theme === 'system' ? nativeTheme.shouldUseDarkColors : prefs.theme === 'dark');
 const BG = { light: '#F4F1EA', dark: '#181715' };
 
+/* ------------------------------ updates ------------------------------ */
+// Installed copies check GitHub Releases once at start, download quietly and install when the app is closed.
+// The portable build and development runs never update themselves.
+function setupUpdates() {
+  if (!app.isPackaged || process.env.PORTABLE_EXECUTABLE_FILE || prefs.autoUpdate === false) return;
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on('update-downloaded', (info) => { if (win && !win.isDestroyed()) win.webContents.send('update:ready', info && info.version); });
+    autoUpdater.on('error', () => { /* offline or no release: stay quiet */ });
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 8000);
+  } catch (err) { /* updates are optional */ }
+}
+
 /* ------------------------------ window ------------------------------ */
 let win = null;
 let allowClose = false;
 
+// Where the window was last time, if that place still exists on a screen.
+function startBounds() {
+  const b = prefs.bounds;
+  const def = { width: 1280, height: 820 };
+  if (!b || !(b.width >= 640) || !(b.height >= 480)) return def;
+  const visible = screen.getAllDisplays().some((d) => {
+    const w = d.workArea;
+    return b.x < w.x + w.width - 80 && b.x + b.width > w.x + 80 && b.y < w.y + w.height - 80 && b.y + 80 < w.y + w.height && b.y >= w.y - 20;
+  });
+  return visible ? { x: b.x, y: b.y, width: b.width, height: b.height } : def;
+}
 function createWindow() {
   win = new BrowserWindow({
-    width: 1280, height: 820, minWidth: 640, minHeight: 480,
+    ...startBounds(), minWidth: 640, minHeight: 480,
     fullscreen: !!prefs.fullscreen,
     backgroundColor: isDark() ? BG.dark : BG.light,
     title: 'Quire',
@@ -63,6 +89,18 @@ function createWindow() {
       spellcheck: true,
     },
   });
+  if (prefs.bounds && prefs.bounds.maximized && !prefs.fullscreen) win.maximize();
+  let boundsTimer;
+  const rememberBounds = () => {
+    clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(() => {
+      if (!win || win.isDestroyed() || win.isFullScreen() || win.isMinimized()) return;
+      const nb = win.getNormalBounds();
+      prefs.bounds = { x: nb.x, y: nb.y, width: nb.width, height: nb.height, maximized: win.isMaximized() };
+      savePrefs();
+    }, 600);
+  };
+  ['resize', 'move', 'maximize', 'unmaximize'].forEach((ev) => win.on(ev, rememberBounds));
   win.once('ready-to-show', () => win.show());
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   if (isDev) win.webContents.openDevTools({ mode: 'detach' });
@@ -119,23 +157,34 @@ function addRecent(p) {
 }
 
 /* ------------------- recovery and version history ------------------- */
+// History belongs to the document (its id is stored inside the file), so renaming or moving the file keeps it.
 const recoveryFile = () => userFile('recovery.draft');
-const versionsDir = (p) => path.join(app.getPath('userData'), 'versions', crypto.createHash('sha1').update(p).digest('hex').slice(0, 16));
+const versionsRoot = () => path.join(app.getPath('userData'), 'versions');
+const idOf = (text) => { const m = /"id":\s*"([A-Za-z0-9_-]{1,40})"/.exec(String(text).slice(0, 600)); return m ? m[1] : null; };
 const lastSnapshot = new Map();
-const SNAPSHOT_EVERY_MS = 10 * 60 * 1000;
-const SNAPSHOT_KEEP = 30;
+const lastText = new Map();
+const SNAPSHOT_EVERY_MS = 5 * 60 * 1000;
+const SNAPSHOT_KEEP = 60;
 
-function snapshot(p, text) {
-  const last = lastSnapshot.get(p) || 0;
-  if (Date.now() - last < SNAPSHOT_EVERY_MS) return;
-  lastSnapshot.set(p, Date.now());
+function writeSnapshot(id, text) {
   try {
-    const dir = versionsDir(p);
+    const dir = path.join(versionsRoot(), id);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, new Date().toISOString().replace(/[:.]/g, '-') + '.draft'), text);
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.draft')).sort();
     for (const f of files.slice(0, Math.max(0, files.length - SNAPSHOT_KEEP))) fs.unlinkSync(path.join(dir, f));
   } catch (e) { /* history is best effort */ }
+}
+function snapshot(text, force) {
+  const id = idOf(text);
+  if (!id) return;
+  // Safety net: if a save is about to shrink the document a lot, keep what was there before.
+  const prev = lastText.get(id);
+  if (prev && prev.length > 2000 && text.length < prev.length * 0.7) { writeSnapshot(id, prev); lastSnapshot.set(id, Date.now()); }
+  lastText.set(id, text);
+  if (Date.now() - (lastSnapshot.get(id) || 0) < (force ? 60 * 1000 : SNAPSHOT_EVERY_MS)) return;
+  lastSnapshot.set(id, Date.now());
+  writeSnapshot(id, text);
 }
 
 /* ------------------------------- export ------------------------------- */
@@ -166,46 +215,29 @@ ipcMain.handle('doc:open-dialog', async () => {
 });
 ipcMain.handle('doc:open-path', (e, p) => readDoc(p));
 
-const revisionOf = (p) => { const m = path.basename(p || '').match(/_v(\d+)\.draft$/i); return m ? +m[1] : 1; };
-
-ipcMain.handle('doc:save', async (e, { path: p, text, suggested, saveAs, newVersion, base, revision }) => {
+ipcMain.handle('doc:save', async (e, { path: p, text, suggested, saveAs }) => {
   try {
-    // "Save version": write the next numbered file next to the current one, without asking.
-    if (p && newVersion && !saveAs) {
-      const dir = path.dirname(p);
-      const stemName = path.basename(p, path.extname(p));
-      const m = stemName.match(/^(.*)_v(\d+)$/i);
-      const b = base || (m ? m[1] : stemName);
-      let n = Math.max(revision || 1, m ? +m[2] : 1);
-      let np;
-      do { n++; np = path.join(dir, b + '_v' + n + '.draft'); } while (fs.existsSync(np));
-      atomicWrite(np, text);
-      snapshot(np, text);
-      addRecent(np);
-      fs.unlink(recoveryFile(), () => {});
-      return { path: np, revision: n };
-    }
     if (!p || saveAs) {
       const r = await dialog.showSaveDialog(win, {
-        title: 'Save',
-        defaultPath: p && saveAs ? p : path.join(app.getPath('documents'), safeName(suggested) + '.draft'),
+        title: saveAs ? 'Save as' : 'Save',
+        defaultPath: p && saveAs ? path.join(path.dirname(p), safeName(suggested) + '.draft') : path.join(app.getPath('documents'), safeName(suggested) + '.draft'),
         filters: [{ name: 'Draft document', extensions: ['draft'] }],
       });
       if (r.canceled || !r.filePath) return null;
       p = r.filePath.toLowerCase().endsWith('.draft') ? r.filePath : r.filePath + '.draft';
     }
     atomicWrite(p, text);
-    snapshot(p, text);
+    snapshot(text, true);
     addRecent(p);
     fs.unlink(recoveryFile(), () => {});
-    return { path: p, revision: revisionOf(p) };
+    return { path: p };
   } catch (err) {
     dialog.showErrorBox('Could not save', err.message);
     return null;
   }
 });
 ipcMain.handle('doc:autosave', (e, { path: p, text }) => {
-  try { atomicWrite(p, text); snapshot(p, text); return true; } catch (err) { return false; }
+  try { atomicWrite(p, text); snapshot(text); return true; } catch (err) { return false; }
 });
 ipcMain.on('recovery:save', (e, text) => { try { fs.mkdirSync(app.getPath('userData'), { recursive: true }); atomicWrite(recoveryFile(), text); } catch (err) { /* ignore */ } });
 ipcMain.on('recovery:clear', () => fs.unlink(recoveryFile(), () => {}));
@@ -245,16 +277,37 @@ ipcMain.handle('win:fullscreen', () => { if (!win) return false; win.setFullScre
 ipcMain.on('win:title', (e, t) => { if (win) win.setTitle(t); });
 ipcMain.on('win:close', () => { if (win && !win.isDestroyed()) win.close(); });
 ipcMain.on('win:close-now', () => { allowClose = true; if (win && !win.isDestroyed()) win.close(); });
+ipcMain.handle('spell:info', () => {
+  try { return { available: session.defaultSession.availableSpellCheckerLanguages, current: session.defaultSession.getSpellCheckerLanguages() }; }
+  catch (err) { return { available: [], current: [] }; }
+});
+ipcMain.handle('spell:set', (e, langs) => {
+  try {
+    const avail = session.defaultSession.availableSpellCheckerLanguages;
+    const ok = (Array.isArray(langs) ? langs : []).filter((l) => avail.includes(l)).slice(0, 2);
+    if (!ok.length) return false;
+    session.defaultSession.setSpellCheckerLanguages(ok);
+    prefs.spellLangs = ok; savePrefs();
+    return true;
+  } catch (err) { return false; }
+});
 ipcMain.on('shell:show', (e, p) => shell.showItemInFolder(p));
 
-ipcMain.handle('versions:list', (e, p) => {
+ipcMain.handle('versions:list', (e, id) => {
   try {
-    const dir = versionsDir(p);
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(String(id))) return [];
+    const dir = path.join(versionsRoot(), id);
     return fs.readdirSync(dir).filter((f) => f.endsWith('.draft')).sort().reverse()
       .map((f) => ({ file: path.join(dir, f), time: fs.statSync(path.join(dir, f)).mtimeMs }));
   } catch (err) { return []; }
 });
-ipcMain.handle('versions:read', (e, f) => { try { return fs.readFileSync(f, 'utf8'); } catch (err) { return null; } });
+ipcMain.handle('versions:read', (e, f) => {
+  try {
+    const full = path.resolve(String(f));
+    if (!full.startsWith(versionsRoot() + path.sep)) return null; // only files inside the history folder
+    return fs.readFileSync(full, 'utf8');
+  } catch (err) { return null; }
+});
 
 /* ------------------------------ lifecycle ------------------------------ */
 if (!app.requestSingleInstanceLock()) {
@@ -271,13 +324,14 @@ if (!app.requestSingleInstanceLock()) {
     loadPrefs();
     if (!isDev) Menu.setApplicationMenu(null);
     try {
-      const wanted = ['en-CA', 'en-US', 'en-GB'];
       const avail = session.defaultSession.availableSpellCheckerLanguages;
+      const wanted = Array.isArray(prefs.spellLangs) && prefs.spellLangs.length ? prefs.spellLangs : ['en-CA', 'en-US', 'en-GB'];
       const langs = wanted.filter((l) => avail.includes(l)).slice(0, 2);
       if (langs.length) session.defaultSession.setSpellCheckerLanguages(langs);
     } catch (err) { /* keep the OS default */ }
     nativeTheme.on('updated', () => { if (win) win.webContents.send('theme:system', nativeTheme.shouldUseDarkColors); });
     createWindow();
+    setupUpdates();
   });
   app.on('window-all-closed', () => app.quit());
 }

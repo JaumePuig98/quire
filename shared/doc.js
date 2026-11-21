@@ -20,10 +20,12 @@
     return { id: uid(), title: title || '', blocks: [{ t: 'p', runs: [] }] };
   }
   function newDoc() {
-    return { format: FORMAT, version: VERSION, title: '', created: now(), modified: now(), chapters: [newChapter()], notes: {} };
+    return { format: FORMAT, version: VERSION, id: uid(), title: '', created: now(), modified: now(), chapters: [newChapter()], notes: {} };
   }
 
   const blockText = (b) => b.runs.map((r) => r.text).join('');
+  // A quote line that starts with a dash is the author of the quote.
+  const isCite = (b) => b.t === 'quote' && /^\s*[-\u2013\u2014]/.test(blockText(b));
   function countWords(blocks) {
     let n = 0;
     for (const b of blocks) {
@@ -54,20 +56,53 @@
   }
 
   /* ---------- .draft file ---------- */
+  const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+  const BLOCK_TYPES = { p: 1, h1: 1, h2: 1, quote: 1 };
+  // Reads a document from outside (a file, a backup) and returns a clean copy: whatever is damaged is repaired or dropped,
+  // so a bad file can never crash the app.
   function validate(doc) {
-    if (!doc || doc.format !== FORMAT) throw new Error('This is not a .draft document.');
+    if (!doc || typeof doc !== 'object' || doc.format !== FORMAT) throw new Error('This is not a .draft document.');
     if (typeof doc.version !== 'number' || doc.version > VERSION)
       throw new Error('This document was made with a newer version of the app. Please update the app to open it.');
-    if (!Array.isArray(doc.chapters) || !doc.chapters.length) doc.chapters = [newChapter()];
-    for (const c of doc.chapters) {
-      if (!c.id) c.id = uid();
-      if (typeof c.title !== 'string') c.title = '';
-      if (!Array.isArray(c.blocks) || !c.blocks.length) c.blocks = [{ t: 'p', runs: [] }];
-      for (const b of c.blocks) if (!Array.isArray(b.runs)) b.runs = [];
+    const str = (v) => (typeof v === 'string' ? v : '');
+    const out = {
+      format: FORMAT, version: VERSION,
+      id: typeof doc.id === 'string' && ID_RE.test(doc.id) ? doc.id : uid(),
+      title: str(doc.title), created: str(doc.created) || now(), modified: str(doc.modified) || now(),
+      chapters: [], notes: {},
+    };
+    if (typeof doc.author === 'string') out.author = doc.author;
+    const seen = new Set();
+    for (const c of Array.isArray(doc.chapters) ? doc.chapters : []) {
+      if (!c || typeof c !== 'object') continue;
+      let id = typeof c.id === 'string' && ID_RE.test(c.id) ? c.id : uid();
+      while (seen.has(id)) id = uid();
+      seen.add(id);
+      const blocks = [];
+      for (const b of Array.isArray(c.blocks) ? c.blocks : []) {
+        if (!b || typeof b !== 'object') continue;
+        const runs = [];
+        for (const r of Array.isArray(b.runs) ? b.runs : []) {
+          if (!r || typeof r !== 'object' || typeof r.text !== 'string') continue;
+          const run = { text: r.text };
+          if (r.b) run.b = 1;
+          if (r.i) run.i = 1;
+          if (r.u) run.u = 1;
+          if (typeof r.n === 'string' && ID_RE.test(r.n)) run.n = r.n;
+          runs.push(run);
+        }
+        blocks.push({ t: BLOCK_TYPES[b.t] === 1 ? b.t : 'p', runs });
+      }
+      out.chapters.push({ id, title: str(c.title), blocks: blocks.length ? blocks : [{ t: 'p', runs: [] }] });
     }
-    if (!doc.notes || typeof doc.notes !== 'object') doc.notes = {};
-    if (typeof doc.title !== 'string') doc.title = '';
-    return doc;
+    if (!out.chapters.length) out.chapters = [newChapter()];
+    if (doc.notes && typeof doc.notes === 'object') {
+      for (const id of Object.keys(doc.notes)) {
+        const n = doc.notes[id];
+        if (ID_RE.test(id) && n && typeof n === 'object' && typeof n.text === 'string') out.notes[id] = { text: n.text, created: str(n.created) || now() };
+      }
+    }
+    return out;
   }
   function parseDraft(text) {
     let doc;
@@ -76,7 +111,7 @@
   }
   // One block per line, so version control (git) shows readable diffs.
   function serializeDraft(doc) {
-    const head = { format: FORMAT, version: VERSION, title: doc.title || '', created: doc.created, modified: doc.modified };
+    const head = { format: FORMAT, version: VERSION, id: doc.id, title: doc.title || '', created: doc.created, modified: doc.modified };
     const chapters = doc.chapters.map((c) => {
       const blocks = c.blocks.map((b) => '    ' + JSON.stringify({ t: b.t, runs: normalizeRuns(b.runs) })).join(',\n');
       return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
@@ -241,7 +276,7 @@
   }
 
   return {
-    FORMAT, VERSION, slugify, uid, now, newDoc, newChapter, blockText, countWords, countDoc, normalizeRuns, validate,
+    FORMAT, VERSION, slugify, uid, now, newDoc, newChapter, blockText, isCite, countWords, countDoc, normalizeRuns, validate,
     parseDraft, serializeDraft, usedNoteIds, orderedNotes, headingPlan, blockLevel,
     toMarkdown, toPlainText, fromMarkdown, parseInlineMd,
   };
