@@ -1,0 +1,241 @@
+/* Document model + format helpers, shared by the main process and the renderer.
+ *
+ * Model
+ *   doc      = { format:'draft', version:1, title, created, modified, chapters:[chapter], notes:{id:{text,created}} }
+ *   chapter  = { id, title, blocks:[block] }
+ *   block    = { t:'p'|'h1'|'h2'|'quote', runs:[run] }
+ *   run      = { text, b?, i?, u?, n? }          n = note id the run belongs to
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.DocFmt = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  const FORMAT = 'draft';
+  const VERSION = 1;
+
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const now = () => new Date().toISOString();
+
+  function newChapter(title) {
+    return { id: uid(), title: title || '', blocks: [{ t: 'p', runs: [] }] };
+  }
+  function newDoc() {
+    return { format: FORMAT, version: VERSION, title: '', created: now(), modified: now(), chapters: [newChapter()], notes: {} };
+  }
+
+  const blockText = (b) => b.runs.map((r) => r.text).join('');
+  function countWords(blocks) {
+    let n = 0;
+    for (const b of blocks) {
+      const t = blockText(b).trim();
+      if (t) n += t.split(/\s+/).length;
+    }
+    return n;
+  }
+  const countDoc = (doc) => doc.chapters.reduce((s, c) => s + countWords(c.blocks), 0);
+
+  const sameFmt = (a, b) => !!a.b === !!b.b && !!a.i === !!b.i && !!a.u === !!b.u && (a.n || '') === (b.n || '');
+  function normalizeRuns(runs) {
+    const out = [];
+    for (const r of runs) {
+      if (!r.text) continue;
+      const last = out[out.length - 1];
+      if (last && sameFmt(last, r)) last.text += r.text;
+      else out.push(Object.assign({}, r));
+    }
+    return out;
+  }
+
+  /* ---------- .draft file ---------- */
+  function validate(doc) {
+    if (!doc || doc.format !== FORMAT) throw new Error('This is not a .draft document.');
+    if (typeof doc.version !== 'number' || doc.version > VERSION)
+      throw new Error('This document was made with a newer version of the app. Please update the app to open it.');
+    if (!Array.isArray(doc.chapters) || !doc.chapters.length) doc.chapters = [newChapter()];
+    for (const c of doc.chapters) {
+      if (!c.id) c.id = uid();
+      if (typeof c.title !== 'string') c.title = '';
+      if (!Array.isArray(c.blocks) || !c.blocks.length) c.blocks = [{ t: 'p', runs: [] }];
+      for (const b of c.blocks) if (!Array.isArray(b.runs)) b.runs = [];
+    }
+    if (!doc.notes || typeof doc.notes !== 'object') doc.notes = {};
+    if (typeof doc.title !== 'string') doc.title = '';
+    return doc;
+  }
+  function parseDraft(text) {
+    let doc;
+    try { doc = JSON.parse(text); } catch (e) { throw new Error('This file is damaged or is not a .draft document.'); }
+    return validate(doc);
+  }
+  // One block per line, so version control (git) shows readable diffs.
+  function serializeDraft(doc) {
+    const head = { format: FORMAT, version: VERSION, title: doc.title || '', created: doc.created, modified: doc.modified };
+    const chapters = doc.chapters.map((c) => {
+      const blocks = c.blocks.map((b) => '    ' + JSON.stringify({ t: b.t, runs: normalizeRuns(b.runs) })).join(',\n');
+      return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
+    });
+    const used = usedNoteIds(doc);
+    const notes = {};
+    for (const id of Object.keys(doc.notes)) if (used.has(id)) notes[id] = doc.notes[id];
+    const noteLines = Object.keys(notes).map((id) => '  ' + JSON.stringify(id) + ': ' + JSON.stringify(notes[id]));
+    return (
+      '{\n' +
+      Object.keys(head).map((k) => ' ' + JSON.stringify(k) + ': ' + JSON.stringify(head[k])).join(',\n') +
+      ',\n "chapters": [\n' + chapters.join(',\n') + '\n ],\n "notes": {' +
+      (noteLines.length ? '\n' + noteLines.join(',\n') + '\n ' : '') + '}\n}\n'
+    );
+  }
+  function usedNoteIds(doc) {
+    const s = new Set();
+    for (const c of doc.chapters) for (const b of c.blocks) for (const r of b.runs) if (r.n) s.add(r.n);
+    return s;
+  }
+  // Notes in order of first appearance: [{id, text, num}]
+  function orderedNotes(doc) {
+    const out = [];
+    const seen = new Set();
+    for (const c of doc.chapters) for (const b of c.blocks) for (const r of b.runs) {
+      if (r.n && !seen.has(r.n) && doc.notes[r.n]) { seen.add(r.n); out.push({ id: r.n, text: doc.notes[r.n].text || '', num: out.length + 1 }); }
+    }
+    return out;
+  }
+
+  /* ---------- headings ---------- */
+  // With several chapters, chapter titles are the top heading and in-text headings move one level down.
+  function headingPlan(doc) {
+    const titled = doc.chapters.length > 1 || (doc.chapters[0] && doc.chapters[0].title.trim() !== '');
+    return { chapterHeadings: titled, shift: titled ? 1 : 0 };
+  }
+  const blockLevel = (b, shift) => (b.t === 'h1' ? 1 + shift : b.t === 'h2' ? 2 + shift : 0);
+
+  /* ---------- Markdown ---------- */
+  function escMd(s) { return s.replace(/\\/g, '\\\\').replace(/\*/g, '\\*'); }
+  function mdRun(r) {
+    let t = escMd(r.text).replace(/\n/g, '  \n');
+    if (!t.trim()) return t;
+    const lead = t.match(/^\s*/)[0], trail = t.match(/\s*$/)[0];
+    let core = t.slice(lead.length, t.length - trail.length);
+    if (r.u) core = '<u>' + core + '</u>';
+    if (r.b && r.i) core = '***' + core + '***';
+    else if (r.b) core = '**' + core + '**';
+    else if (r.i) core = '*' + core + '*';
+    return lead + core + trail;
+  }
+  function inlineMd(runs, marker) {
+    let s = '';
+    runs = normalizeRuns(runs);
+    for (let k = 0; k < runs.length; k++) {
+      s += mdRun(runs[k]);
+      const r = runs[k], nx = runs[k + 1];
+      if (r.n && marker && (!nx || nx.n !== r.n)) { const m = marker(r.n); if (m) s += m; }
+    }
+    return s;
+  }
+  function toMarkdown(doc, opts) {
+    opts = opts || {};
+    const plan = headingPlan(doc);
+    const notes = opts.notes ? orderedNotes(doc) : [];
+    const num = {};
+    notes.forEach((n) => (num[n.id] = n.num));
+    const emitted = new Set();
+    const marker = (id) => { if (!num[id] || emitted.has(id)) return ''; emitted.add(id); return '[^' + num[id] + ']'; };
+    const out = [];
+    doc.chapters.forEach((c) => {
+      if (plan.chapterHeadings) out.push('# ' + escMd(c.title.trim() || 'Untitled chapter'));
+      for (const b of c.blocks) {
+        const body = inlineMd(b.runs, opts.notes ? marker : null);
+        if (!body.trim()) continue;
+        const lvl = blockLevel(b, plan.shift);
+        if (lvl) out.push('#'.repeat(Math.min(lvl, 6)) + ' ' + body.replace(/\n/g, ' '));
+        else if (b.t === 'quote') out.push(body.split('\n').map((l) => '> ' + l).join('\n'));
+        else out.push(/^[#>]/.test(body) ? '\\' + body : body);
+      }
+    });
+    if (notes.length) out.push(notes.map((n) => '[^' + n.num + ']: ' + n.text.replace(/\n+/g, ' ')).join('\n'));
+    return out.join('\n\n') + '\n';
+  }
+  function toPlainText(doc, opts) {
+    opts = opts || {};
+    const plan = headingPlan(doc);
+    const notes = opts.notes ? orderedNotes(doc) : [];
+    const num = {};
+    notes.forEach((n) => (num[n.id] = n.num));
+    const emitted = new Set();
+    const out = [];
+    doc.chapters.forEach((c, ci) => {
+      if (plan.chapterHeadings) out.push((ci ? '\n' : '') + (c.title.trim() || 'Untitled chapter').toUpperCase());
+      for (const b of c.blocks) {
+        let s = '';
+        const runs = normalizeRuns(b.runs);
+        runs.forEach((r, k) => {
+          s += r.text;
+          const nx = runs[k + 1];
+          if (r.n && num[r.n] && !emitted.has(r.n) && (!nx || nx.n !== r.n)) { emitted.add(r.n); s += '[' + num[r.n] + ']'; }
+        });
+        if (!s.trim()) continue;
+        out.push(b.t === 'quote' ? s.split('\n').map((l) => '    ' + l).join('\n') : s);
+      }
+    });
+    if (notes.length) out.push('\nNotes\n' + notes.map((n) => '[' + n.num + '] ' + n.text.replace(/\n+/g, ' ')).join('\n'));
+    return out.join('\n\n') + '\n';
+  }
+
+  function parseInlineMd(src) {
+    const runs = [];
+    let b = false, i = false, u = false, buf = '';
+    const flush = () => { if (buf) runs.push({ text: buf, b, i, u }); buf = ''; };
+    for (let k = 0; k < src.length; k++) {
+      const ch = src[k];
+      if (ch === '\\' && k + 1 < src.length) { buf += src[++k]; continue; }
+      if (ch === '*') {
+        flush();
+        if (src[k + 1] === '*') { b = !b; k++; } else i = !i;
+        continue;
+      }
+      if (src.startsWith('<u>', k)) { flush(); u = true; k += 2; continue; }
+      if (src.startsWith('</u>', k)) { flush(); u = false; k += 3; continue; }
+      buf += ch;
+    }
+    flush();
+    return normalizeRuns(runs.map((r) => { const o = { text: r.text }; if (r.b) o.b = 1; if (r.i) o.i = 1; if (r.u) o.u = 1; return o; }));
+  }
+  // Markdown / plain text -> one-chapter document. Lines separated by a blank line are paragraphs.
+  function fromMarkdown(text, title) {
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    const blocks = [];
+    let para = [];
+    const flushPara = () => {
+      if (para.length) blocks.push({ t: 'p', runs: parseInlineMd(para.join(' ').trim()) });
+      para = [];
+    };
+    for (const line of lines) {
+      let m;
+      if (!line.trim()) { flushPara(); continue; }
+      if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+        flushPara();
+        blocks.push({ t: m[1].length === 1 ? 'h1' : 'h2', runs: parseInlineMd(m[2]) });
+      } else if ((m = line.match(/^>\s?(.*)$/))) {
+        flushPara();
+        const last = blocks[blocks.length - 1];
+        if (last && last.t === 'quote' && last._open) { last.runs.push({ text: ' ' }); last.runs.push(...parseInlineMd(m[1])); }
+        else blocks.push({ t: 'quote', runs: parseInlineMd(m[1]), _open: true });
+      } else {
+        if (blocks.length && blocks[blocks.length - 1]._open) delete blocks[blocks.length - 1]._open;
+        para.push(line.trim());
+      }
+    }
+    flushPara();
+    blocks.forEach((b) => { delete b._open; b.runs = normalizeRuns(b.runs); });
+    if (!blocks.length) blocks.push({ t: 'p', runs: [] });
+    const doc = newDoc();
+    doc.title = title || '';
+    doc.chapters[0].blocks = blocks;
+    return doc;
+  }
+
+  return {
+    FORMAT, VERSION, uid, now, newDoc, newChapter, blockText, countWords, countDoc, normalizeRuns, validate,
+    parseDraft, serializeDraft, usedNoteIds, orderedNotes, headingPlan, blockLevel,
+    toMarkdown, toPlainText, fromMarkdown, parseInlineMd,
+  };
+});

@@ -1,0 +1,62 @@
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const D = require('../shared/doc.js');
+const X = require('../exporters.js');
+
+(async () => {
+  const doc = D.newDoc();
+  doc.title = 'Test book';
+  doc.chapters[0].title = 'The Lamp';
+  doc.chapters[0].blocks = [
+    { t: 'h1', runs: [{ text: 'A heading' }] },
+    { t: 'p', runs: [{ text: 'Plain ' }, { text: 'bold', b: 1 }, { text: ' and ' }, { text: 'italic*star', i: 1 }, { text: ' and ' }, { text: 'note me', u: 1, n: 'n1' }, { text: ' end.' }] },
+    { t: 'quote', runs: [{ text: 'A quoted line.' }] },
+    { t: 'p', runs: [] },
+  ];
+  doc.chapters.push({ id: 'c2', title: 'Second', blocks: [{ t: 'p', runs: [{ text: 'Chapter two text. ' }, { text: 'across', n: 'n1' }] }] });
+  doc.notes.n1 = { text: 'Check this passage', created: D.now() };
+
+  // .draft round trip
+  const s = D.serializeDraft(doc);
+  const back = D.parseDraft(s);
+  assert.strictEqual(back.chapters.length, 2);
+  assert.strictEqual(back.chapters[0].blocks[1].runs[3].text, 'italic*star');
+  assert.strictEqual(back.notes.n1.text, 'Check this passage');
+  assert.throws(() => D.parseDraft('{"format":"other"}'));
+  assert.throws(() => D.parseDraft('not json'));
+  assert.throws(() => D.parseDraft('{"format":"draft","version":99,"chapters":[]}'));
+  console.log('ok draft round-trip,', D.countDoc(doc), 'words');
+
+  // markdown
+  const md = D.toMarkdown(doc, { notes: true });
+  assert(md.includes('# The Lamp'));
+  assert(md.includes('## A heading'));
+  assert(md.includes('**bold**'));
+  assert(md.includes('*italic\\*star*'));
+  assert(md.includes('<u>note me</u>[^1]'));
+  assert(md.includes('[^1]: Check this passage'));
+  assert(md.includes('> A quoted line.'));
+  const imp = D.fromMarkdown(D.toMarkdown(doc, { notes: false }));
+  const para = imp.chapters[0].blocks.find((b) => b.runs.some((r) => r.b));
+  assert(para.runs.some((r) => r.b && r.text === 'bold'));
+  assert(para.runs.some((r) => r.i && r.text === 'italic*star'));
+  assert(para.runs.some((r) => r.u && r.text === 'note me'));
+  assert(D.toPlainText(doc, { notes: true }).includes('[1] Check this passage'));
+  console.log('ok markdown');
+
+  // docx
+  const buf = await X.toDocx(doc, { font: 'serif', notes: true, author: 'Tester' });
+  const out = path.join(os.tmpdir(), 'wa-test.docx');
+  fs.writeFileSync(out, buf);
+  const buf2 = await X.toDocx(doc, { font: 'sans', notes: false });
+  fs.writeFileSync(path.join(os.tmpdir(), 'wa-test-nonotes.docx'), buf2);
+  console.log('ok docx written', buf.length);
+
+  // html
+  const html = X.toHtml(doc, { font: 'serif', notes: true, fontsDir: path.join(__dirname, '..', 'renderer', 'fonts') });
+  assert(html.includes('<h1>The Lamp</h1>') && html.includes('<h2>A heading</h2>') && html.includes('class="nref"'));
+  fs.writeFileSync(path.join(os.tmpdir(), 'wa-test.html'), html);
+  console.log('ok html');
+})().catch((e) => { console.error('FAIL', e); process.exit(1); });
