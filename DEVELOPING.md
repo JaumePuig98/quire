@@ -29,7 +29,7 @@ git tag v1.0.1
 git push origin v1.0.1
 ```
 
-The workflow in `.github/workflows/build-windows.yml` runs on any tag starting with `v`. It runs the tests, builds the installers and publishes them as a GitHub release. Installed copies pick the release up on their own.
+The workflow in `.github/workflows/build-windows.yml` runs on any tag starting with `v`. It runs the tests, builds the installers with `npm run dist`, then creates the release and uploads the five files with the `gh` command (the setup, its `.blockmap`, `latest.yml` and the two portables). The upload is a separate step because electron-builder's own publisher can race itself and leave a release half empty. The step fails if fewer than five files end up in the release. Installed copies pick the release up on their own.
 
 Things that must be true for this to work:
 

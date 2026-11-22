@@ -1,6 +1,8 @@
 name: Build and release
 
-# Push a tag like v0.2.1 to build the installers and publish them as a GitHub release.
+# Push a tag like v1.0.1 to build the installers and publish them as a GitHub release.
+# The build and the upload are separate steps on purpose: electron-builder's own
+# publisher can race itself and leave a release half empty.
 on:
   push:
     tags: ['v*']
@@ -13,22 +15,47 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
-      - name: Build and publish (tags only)
+
+      - name: Build installers
+        run: npm run dist
+
+      - name: Publish release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
-        run: npm run release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build only (manual run)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: npm run dist
-      - uses: actions/upload-artifact@v4
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          VERSION="${TAG#v}"
+          FILES=(
+            "dist/Quire-Setup-${VERSION}.exe"
+            "dist/Quire-Setup-${VERSION}.exe.blockmap"
+            "dist/latest.yml"
+            "dist/Quire-Portable-${VERSION}-x64.exe"
+            "dist/Quire-Portable-${VERSION}-arm64.exe"
+          )
+          for f in "${FILES[@]}"; do
+            test -f "$f" || { echo "Missing build output: $f"; exit 1; }
+          done
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists, replacing its files"
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          else
+            gh release create "$TAG" "${FILES[@]}" --title "Quire ${VERSION}" --notes "Quire ${VERSION}. Download Quire-Setup-${VERSION}.exe to install. Windows may warn about an unknown publisher: click More info, then Run anyway."
+          fi
+          COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          echo "Release has $COUNT files"
+          test "$COUNT" -ge 5
+
+      - uses: actions/upload-artifact@v5
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         with:
           name: windows-installers
