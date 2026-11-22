@@ -1,50 +1,47 @@
 # Quire
 
-A distraction-free writing app for Windows, built for long work like books.
-The line you are writing stays in one place, low on the screen, like paper feeding through a typewriter.
-Everything else stays out of the way.
+A quiet place to write long things, like books.
 
-## Install (for you and for friends)
+The line you are writing stays in one place, low on the screen, like paper feeding through a typewriter. Everything else stays out of the way.
 
-Download the installer from the repository's **Releases** page:
+![Writing in Quire](docs/writing-light.png)
 
-* **`Quire-Setup-x.y.z.exe`**: one installer for every Windows PC (Intel/AMD and ARM, such as a Surface Pro X).
-* **`Quire-Portable-x.y.z-x64.exe` / `-arm64.exe`**: runs without installing; does not update itself.
+## Download
 
-**Windows will warn you the first time.** Quire is not code-signed (a signing certificate costs money and is not worth it for a
-small project), so Windows SmartScreen shows "Windows protected your PC". Click **More info**, then **Run anyway**.
-The warning is about the missing signature, not about anything found in the file.
+Get the installer from the [**Releases**](../../releases/latest) page:
 
-The installed version checks for a new release when it starts, downloads it quietly, and installs it the next time you close
-Quire. You can turn this off in Settings, under Language. The portable version never updates itself.
+* **`Quire-Setup-x.y.z.exe`**: the normal installer. Works on every Windows PC, Intel/AMD or ARM (such as a Surface Pro X).
+* **`Quire-Portable-x.y.z-x64.exe`** (or `-arm64.exe`): runs without installing, from a USB stick for example. It does not update itself.
 
-## Run from source
+**Windows will warn you the first time.** Quire is not code-signed (a signing certificate costs money and is not worth it for a small free project), so Windows SmartScreen shows "Windows protected your PC". Click **More info**, then **Run anyway**. The warning is about the missing signature, not about anything found in the file.
 
-```
-npm install
-npm start
-```
+The installed version checks for a new release when it starts, downloads it quietly and installs it the next time you close Quire. You can turn this off in Settings, under Language.
 
-Needs [Node.js](https://nodejs.org) 20 or newer. `npm test` runs the quick tests; `npm run test:e2e` starts the real app and drives it like a person (on Linux without a screen: `xvfb-run -a npm run test:e2e`). Both run on every push.
+## What it does
 
-## Release a new version
+* **A typewriter line.** The line you are typing stays near the middle of the screen while the text slides under it. Moving around or editing older text never moves anything.
+* **Made for books.** Chapters, a table of contents for each chapter, a title page with subtitle, author and an extra line, and notes on any passage.
+* **Quiet by default.** Menus hide while you type. Focus mode dims everything except the paragraph or sentence you are writing.
+* **Your page, your way.** Light and dark themes, three bundled fonts, text weight, size and width, and full control of the spacing between lines, paragraphs, headings and quotes.
+* **Review mode** for proof-reading, with typos and notes standing out. Spellcheck works in several languages.
+* **Reading mode** to read a chapter or the whole book as a reader would.
+* **Goals** (optional): a daily word goal, a book target, a streak of days in a row and the words written this session.
+* **Your work is safe.** Automatic saving, a recovery copy if the app closes unexpectedly, and a History of snapshots you can open at any time. You can name a version, for example "Before the rewrite".
+* **Open and export.** Open `.draft`, Markdown, plain text and Word files. Export to Word, PDF, Markdown or plain text, choosing which chapters go in and whether to include the title page and page numbers.
 
-1. Change `version` in `package.json` (for example `1.0.1`), commit and push.
-2. Tag and push the tag:
+![Chapters and settings](docs/chapters.png)
 
-```
-git tag v1.0.1
-git push origin v1.0.1
-```
+## Getting started
 
-The workflow in `.github/workflows/build-windows.yml` runs the tests, builds the installers and publishes them as a GitHub
-release. Installed copies pick the release up on their own. Every push and pull request also runs the tests
-(`.github/workflows/test.yml`).
+1. Start Quire and begin typing. Your work is saved automatically.
+2. Press **Ctrl+S** to give the file a name. Quire suggests one based on your title.
+3. Move the mouse to the top of the window to show the menu. It hides again while you write.
+4. Press **Ctrl+Shift+O** to open the Chapters panel, where you can add chapters, set the book title and author, and jump around.
+5. When you are done, **Export** (Ctrl+E) makes a Word file or PDF.
 
-Auto-update reads the releases of this repository, so the repository has to be **public** for other people's copies to update
-(or for them to download anything). If it is private, share the installer file by hand and turn updates off.
+You can also drag a file onto the window to open it.
 
-## Writing
+## Shortcuts
 
 | Action | Shortcut |
 |---|---|
@@ -53,9 +50,8 @@ Auto-update reads the releases of this repository, so the repository has to be *
 | Quote | Ctrl+Shift+Q (press again to turn off) |
 | Add or edit a note on selected text | Ctrl+Alt+M |
 | Undo / redo (each chapter keeps its own) | Ctrl+Z / Ctrl+Y |
-| Find / find and replace | Ctrl+F / Ctrl+H (F3 = next match; **List** shows every match, click one to go there) |
-| Paste as plain text | Ctrl+Shift+V (a normal paste keeps bold, italic, underline, headings and quotes, and drops everything else) |
-| Writing, review or reading mode | hover **Mode** in the top bar |
+| Find / find and replace | Ctrl+F / Ctrl+H (F3 for the next match; **List** shows every match) |
+| Paste as plain text | Ctrl+Shift+V |
 | Chapters panel | Ctrl+Shift+O |
 | Next / previous chapter | Ctrl+PageDown / Ctrl+PageUp |
 | New / open / save / save as | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S |
@@ -63,97 +59,53 @@ Auto-update reads the releases of this repository, so the repository has to be *
 | Show or hide the formatting bar | Ctrl+/ |
 | Settings | Ctrl+, |
 | Full screen | F11 |
-| Open the top bar with the keyboard | F10 (then Tab and Enter; arrow keys in the Mode menu) |
+| Open the top bar with the keyboard | F10 |
 
-Move the mouse to show the menu bar; it hides again while you type. The formatting bar at the bottom can be hidden with the
-small button beside it (or Ctrl+/) once you know the shortcuts.
+Markdown shortcuts work while you type: `# ` at the start of a line makes a heading, `## ` a sub-heading and `> ` a quote. `**bold**` and `*italic*` convert when you type the closing mark.
 
-### Markdown while you type
+## Writing in more detail
 
-`# ` at the start of a line makes a heading, `## ` a sub-heading, `> ` a quote. `**bold**`, `*italic*` and `_italic_`
-convert when you type the closing mark.
+**Quotes** are set like an epigraph in a book: narrower, a little smaller and to the right. Enter keeps writing in the quote. Enter on an empty line, or after the author line, leaves it. A quote line that starts with a dash is the author.
 
-### Quotes
+**Caret centering** (Settings, Writing line) has three choices: *Off*; *Centered* (the default, the caret stays in the middle and the text moves under it); *Soft* (the caret may wander a little, then the line glides back).
 
-Quotes are set like an epigraph in a book: narrower, a little smaller and to the right. Enter keeps writing in the quote;
-Enter on an empty line, or after the author line, leaves it. A quote line that starts with a dash is the **author**: upright,
-right-aligned.
+**Notes.** Select text and press Ctrl+Alt+M. A small icon appears in the margin: click it to open or close the note, or hover to read it. Notes can be included when you export, as comments in Word.
 
-### The typewriter line
+**Pasting** keeps bold, italic, underline, headings and quotes and drops everything else. Use Ctrl+Shift+V for plain text.
 
-The line you are writing slides sideways so the caret stays near the middle of the screen, and only while you are **adding
-new text** at the end of a paragraph. Moving around or editing in the middle of older text never moves anything.
-**Settings, Caret centering**: *Off*; *Centered* (default: the caret never leaves the middle, the text moves under it);
-*Soft* (the caret may wander a little, then the line glides back to the middle).
+![Spacing settings](docs/settings.png)
 
-### Review mode
+## Your files
 
-For proof-reading: nothing slides or fades, typos and notes stand out more. Spelling mistakes are underlined quietly while you
-write and clearly in review mode. Choose the spellcheck language in Settings, under Language.
+* Your work is saved as a **`.draft`** file. It is plain, readable text, so it also works well with Git, OneDrive or Dropbox.
+* **Saving.** Ctrl+S saves in place. While you write, Quire also saves automatically: to your file once it has a name, otherwise to a recovery copy that comes back the next time you start the app.
+* **History** keeps a snapshot every few minutes and also what was there before any save that removes a lot of text. Open an old snapshot from **History**; it opens as a new document.
+* **If another program changes your file** (Git, OneDrive, Dropbox), Quire never overwrites it silently. It asks whether to keep yours, load theirs or save yours as a copy.
+* **Word files.** Opening a `.docx` keeps headings, bold, italic, underline and quotes. With two or more Heading 1, each one starts a chapter. Images, tables and comments are not imported yet.
 
-### Notes
+## Exporting
 
-Select text and press Ctrl+Alt+M. A small note icon appears in the right margin beside the first line of the passage: click it
-to open or close the note, or hover the icon or the passage to read it.
-
-## Files
-
-* Working files are **`.draft`** files: plain, readable JSON with one paragraph per line, so Git shows clean diffs.
-  They hold the text, formatting, chapters and notes, and an id that ties the file to its history.
-  Every file starts with `"format": "draft"` and a version number so newer versions of the app can always open older files.
-  Damaged files are repaired as far as possible when opened instead of crashing the app.
-* **File names**: a new file is suggested as a simplified form of your title (`my-great-novel.draft`); **Export** suggests the
-  title itself. Set the title in the Chapters panel.
-* **Saving**: Ctrl+S saves in place (it asks only the first time). While you write the app also saves automatically, to your file
-  once it has a name, otherwise to a recovery copy that is restored the next time you start the app.
-* **History** keeps snapshots of the document every few minutes (the last 60) and also keeps what was there before any save that
-  removes a lot of text. History belongs to the document, so it survives renaming or moving the file. *Save as* gives the copy its
-  own history. Open an old snapshot from **History**; it opens as a new document. In History you can also **name a version** (for example "Before the rewrite"): named versions are never cleaned up and can be deleted by hand.
-* **Save, Open and Export** use Quire's own file browser (places, folders, a new-folder button). A small link in it switches to the standard Windows dialog if you prefer that.
-* **Drop a file** (.draft, .md, .txt or .docx) on the window to open it.
-* **Changes from outside**: if another program (git, OneDrive, Dropbox) changes the open file, Quire never overwrites it silently. A document with no unsaved writing reloads by itself; with unsaved writing it asks: keep mine, load theirs, or save mine as a copy. The version you do not keep goes into History first.
-* **Open** also reads `.md`, `.txt` and Word `.docx` files (imported as a new, unsaved document). From Word it keeps headings, bold, italic, underline and quotes; with two or more Heading 1 each one starts a chapter. Images, tables and comments are not imported.
-* **Export** to Word (`.docx`), PDF, Markdown or plain text. The Export menu lets you choose which chapters go in (for a book) and add a **title page** with the title, and optionally a subtitle, the author and an extra line such as "A novel" (set them in the Chapters panel; empty fields are left out). Acknowledgements, a dedication or other pages are simply chapters. **Page numbers** (Word and PDF) can be switched off in the Export menu, and for single chapters with the **#** button in the Chapters panel: the number is hidden but the pages are still counted. The title page is never numbered or counted, so the first chapter is page 1. The book's title belongs to the book, not to a chapter: it is never part of chapter one. A book with a title gets a title page automatically; untick it to leave it out (Quire remembers your choice). Word files carry their own copy of the font (Literata, Nunito or Courier Prime), so they look the same on any PC. Notes can be included: they become real comments in Word and
-  numbered notes elsewhere. Text is justified (setting) except quotes.
-* PDF and Word are A4 with 2.5 cm margins. Chapters start on a new page, headings stay with the paragraph that follows,
-  paragraphs avoid single stranded lines, quotes are not split, and the PDF has page numbers.
+* **Word, PDF, Markdown or plain text.** Word and PDF are A4 with 2.5 cm margins.
+* **Choose chapters** to export just part of a book.
+* **Title page** with title, subtitle, author and an extra line such as "A novel". Empty fields are left out. The title page is never numbered or counted, so chapter one is page 1.
+* **Page numbers** can be switched off for the whole export, or for single chapters with the **#** button in the Chapters panel. The page is still counted, only the number is hidden.
+* Chapters start on a new page, headings stay with the paragraph that follows, and quotes are not split across pages.
+* Word files carry their own copy of the font, so they look the same on any PC.
 
 ## Settings
 
-**Settings** opens a page of its own with sections on the left: Appearance (theme, accent color, font, justified text, formatting bar), Page (text weight, size, column width), Spacing (line spacing, space between paragraphs, first-line indent, space above and below headings, space around quotes; exports keep their own standard spacing), Writing line (typewriter scrolling, line position, caret centering, **focus** that dims everything but the paragraph or the sentence you are writing, fading, soft light), Goals (daily word goal and book target, both off by default; a streak of days in a row that you reached the goal; optionally the words written this session) and Language (spellcheck languages, automatic updates).
+Press Ctrl+, to open Settings. Sections: Appearance, Page, Spacing, Writing line, Goals and Language. Every slider has a number you can type and a small arrow to put it back to its default. **Reset all** restores everything.
 
-Sliders step aside while you drag them: the page fades out and the text shows the change live. Every slider has a number you can type, and a small arrow to put it back to its default; **Reset all** restores everything. Settings are kept between sessions.
+![Dark theme](docs/writing-dark.png)
 
-**Reading mode** (Mode menu) can show just the current chapter or the whole book; the choice is in the bar at the bottom. In the whole-book view the chapter changes as you scroll, so Back to writing returns to where you were.
+## Privacy
 
-## Renaming
+Quire works offline and keeps everything on your computer. The only network request it makes is the check for a new version, which you can turn off in Settings.
 
-The product name and the file extension are separate things on purpose.
+## Feedback
 
-* Name shown to the user: `productName` in `package.json` (twice), `<title>` in `renderer/index.html`,
-  `title` in `main.js` and the window title in `renderer/app.js`.
-* Keep `appId` (`app.writingapp.editor`) unchanged so the installer keeps treating new versions as an update.
-  Electron stores settings in a folder named after `productName` (`%APPDATA%\Quire`); if you rename the app later,
-  add `app.setName('Quire')` at the top of `main.js` to keep using that folder.
-* The icon is `build/icon.svg` (source), `build/icon.ico` (installer and taskbar) and `renderer/icon.png` (window).
-* The GitHub repository can be renamed at any time; GitHub redirects the old address. Update `repository` and the `publish`
-  section in `package.json` if you do.
+Found a bug or have an idea? Please open an [issue](../../issues). If you are a developer, see [DEVELOPING.md](DEVELOPING.md).
 
-## Project layout
+## License
 
-```
-main.js            window, files, autosave, history, updates, export dialogs
-preload.js         the safe bridge between the window and main.js
-exporters.js       Word and PDF export
-docx-import.js     reads Word files into the document model
-shared/doc.js      the .draft format, validation, Markdown and plain-text conversion
-renderer/          the writing interface (index.html, style.css, app.js, filebrowser.js, fonts/)
-test/run.js        quick tests (format, export):  npm test
-test/e2e.js        drives the real app:  npm run test:e2e
-exporter-fonts/    static copies of the fonts, embedded into Word files
-test/pdf-test.js   PDF check:  npx electron test/pdf-test.js
-to_delete/         (ignored by git) things waiting to be deleted by hand
-scratch/           (ignored by git) local scratch files
-```
-
-Fonts (bundled variable fonts, so everything looks the same on every PC and the weight can be set smoothly): Literata, Nunito and Courier Prime for writing, Inter for the menus, all SIL Open Font License (the license texts are in `renderer/fonts/licenses/`). Quire itself is MIT licensed (`LICENSE`).
+Quire is free software under the MIT license (see `LICENSE`). The bundled fonts (Literata, Nunito, Courier Prime and Inter) are under the SIL Open Font License; their licenses are in `renderer/fonts/licenses/`.
