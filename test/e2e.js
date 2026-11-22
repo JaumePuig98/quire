@@ -89,6 +89,9 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
     const num = page.locator('input[data-num=size]');
     await num.fill('500'); await num.press('Enter');
     ok((await num.inputValue()) === '34', 'a typed number is limited to the slider range');
+    await num.fill('3'); await num.press('Enter');
+    ok((await num.inputValue()) === '10', 'text size can go as low as 10 px');
+    ok(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--fs').trim() === '10px'), 'the page really uses 10 px');
     await page.click('[data-reset=size]');
     ok((await num.inputValue()) === '22', 'the reset arrow restores the default');
     await page.click('.st-nav [data-sec=look]'); await page.click('[data-pref=font] [data-v=type]');
@@ -178,10 +181,15 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
     await page.waitForTimeout(1200);
     ok((await model()).text.join('').includes('THIRD OUTSIDE EDIT'), 'Load theirs brings the disk version in');
 
+    /* ---- export menu: all three boxes start ticked ---- */
+    ok(await page.evaluate(() => document.getElementById('exportNotes').defaultChecked), 'Include notes starts ticked in the export menu');
+
     /* ---- reading: current chapter or whole book ---- */
     await page.evaluate(() => { const A = window.__app; A.addChapter(); });
     await page.waitForTimeout(300);
-    await page.click('#editor'); await page.keyboard.type('Second chapter text.');
+    ok(await page.evaluate(() => document.activeElement === document.getElementById('editor')), 'a new chapter puts the caret in the text, not in the title field');
+    await page.keyboard.type('Second chapter text.');
+    ok(await page.evaluate(() => { const A = window.__app; A.syncFromDom(); const b = A.doc.chapters[A.doc.chapters.length - 1].blocks[0]; return b.t === 'p'; }), 'a new chapter starts in plain text, not a heading');
     await page.waitForTimeout(900);
     const before = JSON.stringify((await model()).text);
     await page.evaluate(() => window.__app.selectChapter(0)); await page.waitForTimeout(300);

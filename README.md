@@ -87,7 +87,7 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 * **Word, PDF, Markdown or plain text.** Word and PDF are A4 with 2.5 cm margins.
 * **Choose chapters** to export just part of a book.
-* **Title page** with title, subtitle, author and an extra line such as "A novel". Empty fields are left out. The title page is never numbered or counted, so chapter one is page 1.
+* **Title page** with title, subtitle, author and an extra line such as "A novel". It is ticked by default when the book has a title; empty fields are left out. The title page is never numbered or counted, so chapter one is page 1.
 * **Page numbers** can be switched off for the whole export, or for single chapters with the **#** button in the Chapters panel. The page is still counted, only the number is hidden.
 * Chapters start on a new page, headings stay with the paragraph that follows, and quotes are not split across pages.
 * Word files carry their own copy of the font, so they look the same on any PC.

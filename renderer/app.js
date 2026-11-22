@@ -1338,15 +1338,19 @@
       inp.addEventListener('focus', () => { if (i !== cur) selectChapter(i); });
       inp.addEventListener('input', () => { c.title = inp.value; markDirty(); updateStatus(); });
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); closeOutline(); } });
-      const wc = document.createElement('span'); wc.className = 'wc'; wc.textContent = (wordCounts[i] || 0).toLocaleString();
-      const mk = (label, title, fn, dis) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.disabled = !!dis; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b; };
+      const wc = document.createElement('span'); wc.className = 'wc'; wc.textContent = (wordCounts[i] || 0).toLocaleString() + ' words';
+      const mk = (label, title, fn, dis) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.disabled = !!dis; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b; };
       const nb = mk('#', c.nonum ? 'Page numbers are hidden on this chapter. Click to show them.' : 'Page numbers are shown on this chapter. Click to hide them (the pages are still counted).', () => { c.nonum = !c.nonum; if (!c.nonum) delete c.nonum; markDirty(); renderOutline(); });
-      nb.className = 'pn' + (c.nonum ? ' off' : ''); nb.setAttribute('aria-pressed', String(!c.nonum)); nb.setAttribute('aria-label', 'Page numbers on chapter ' + (i + 1));
-      li.append(num, inp, wc, nb,
-        mk('Up', 'Move up', () => moveChapter(i, -1), i === 0),
-        mk('Down', 'Move down', () => moveChapter(i, 1), i === doc.chapters.length - 1),
-        mk('Del', 'Delete chapter', () => deleteChapter(i), doc.chapters.length < 2));
-      li.addEventListener('click', (e) => { if (e.target === li || e.target === num || e.target === wc) selectChapter(i); });
+      nb.className = 'pn' + (c.nonum ? ' off' : ''); nb.setAttribute('aria-pressed', String(!c.nonum));
+      // two lines: the title has the whole width, the word count and the tools sit under it
+      const top = document.createElement('div'); top.className = 'ch-top'; top.append(num, inp);
+      const tools = document.createElement('div'); tools.className = 'ch-tools';
+      tools.append(wc, nb,
+        mk('\u2191', 'Move chapter up', () => moveChapter(i, -1), i === 0),
+        mk('\u2193', 'Move chapter down', () => moveChapter(i, 1), i === doc.chapters.length - 1),
+        mk('\u00d7', 'Delete chapter', () => deleteChapter(i), doc.chapters.length < 2));
+      li.append(top, tools);
+      li.addEventListener('click', (e) => { if (e.target === li || e.target === num || e.target === wc || e.target === top || e.target === tools) selectChapter(i); });
       // a table of contents of the chapter: its headings, a click goes there
       const heads = [];
       let first = true;
@@ -1428,8 +1432,8 @@
     wordCounts.push(0);
     cur = doc.chapters.length - 1;
     renderChapter(); renderOutline(); updateStatus(); markDirty();
-    const inputs = $$('#chapterList input');
-    if (inputs.length) inputs[inputs.length - 1].focus();
+    // start writing right away, in plain text (the name can be typed in the Chapters panel)
+    editor.focus(); placeCaretAtEnd();
   }
   function openOutline() { syncFromDom(); closePanels(); $('#outline').hidden = false; renderOutline(); }
   function closeOutline() { $('#outline').hidden = true; if (!reading) { editor.focus(); } }
@@ -1437,8 +1441,8 @@
   /* ============================ export / history ============================ */
   // Which chapters go into an export: all of them unless the person unticks some (null = all)
   let exportSel = null;
-  const autoTitlePage = () => !!(doc && doc.chapters.length > 1 && (doc.title || '').trim());
-  const wantTitlePage = () => (prefs.titlePage == null ? autoTitlePage() : !!prefs.titlePage);
+  // ticked unless the person has switched it off once (it only appears when the book has a title)
+  const wantTitlePage = () => (prefs.titlePage == null ? true : !!prefs.titlePage);
   function renderExportChapters() {
     $('#exportTitlePage').checked = wantTitlePage();
     const box = $('#exportChapters'), list = $('#exportChapterList'), btn = $('#exportChaptersBtn');

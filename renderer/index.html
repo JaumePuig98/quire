@@ -106,7 +106,7 @@
   <button type="button" data-format="pdf">PDF <span class="hint">A4 · .pdf</span></button>
   <button type="button" data-format="md">Markdown <span class="hint">.md</span></button>
   <button type="button" data-format="txt">Plain text <span class="hint">.txt</span></button>
-  <label class="check"><input type="checkbox" id="exportNotes"> Include notes</label>
+  <label class="check"><input type="checkbox" id="exportNotes" checked> Include notes</label>
   <label class="check"><input type="checkbox" data-pref="titlePage" id="exportTitlePage"> Title page</label>
   <label class="check"><input type="checkbox" data-pref="pageNumbers"> Page numbers <span class="hint">Word and PDF</span></label>
   <div id="exportChapters" hidden>
@@ -141,7 +141,7 @@
       </section>
       <section data-secpane="page" hidden>
         <div class="row slider"><span>Text weight</span><input type="range" min="300" max="560" step="10" data-pref="weight" aria-label="Text weight"><span class="num"><input type="number" min="300" max="560" step="10" data-num="weight" aria-label="Text weight, exact value"><em></em></span><button type="button" class="reset" data-reset="weight" title="Back to the default" aria-label="Reset Text weight">&#8634;</button></div>
-        <div class="row slider"><span>Text size</span><input type="range" min="17" max="34" step="1" data-pref="size" aria-label="Text size"><span class="num"><input type="number" min="17" max="34" step="1" data-num="size" aria-label="Text size, exact value"><em>px</em></span><button type="button" class="reset" data-reset="size" title="Back to the default" aria-label="Reset Text size">&#8634;</button></div>
+        <div class="row slider"><span>Text size</span><input type="range" min="10" max="34" step="1" data-pref="size" aria-label="Text size"><span class="num"><input type="number" min="10" max="34" step="1" data-num="size" aria-label="Text size, exact value"><em>px</em></span><button type="button" class="reset" data-reset="size" title="Back to the default" aria-label="Reset Text size">&#8634;</button></div>
         <div class="row slider"><span>Column width</span><input type="range" min="480" max="940" step="10" data-pref="measure" aria-label="Column width"><span class="num"><input type="number" min="480" max="940" step="10" data-num="measure" aria-label="Column width, exact value"><em>px</em></span><button type="button" class="reset" data-reset="measure" title="Back to the default" aria-label="Reset Column width">&#8634;</button></div>
       </section>
       <section data-secpane="space" hidden>

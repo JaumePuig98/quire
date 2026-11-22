@@ -129,4 +129,14 @@ const X = require('../exporters.js');
   assert(html.includes('<h1>The Lamp</h1>') && html.includes('<h2>A heading</h2>') && html.includes('class="nref"'));
   fs.writeFileSync(path.join(os.tmpdir(), 'wa-test.html'), html);
   console.log('ok html');
+
+  // every setting the app saves must really be in DEFAULT_PREFS (a stray // once swallowed five of them)
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  const block = mainSrc.slice(mainSrc.indexOf('const DEFAULT_PREFS = {'), mainSrc.indexOf('\n};', mainSrc.indexOf('const DEFAULT_PREFS = {')));
+  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal']) {
+    const line = block.split('\n').find((l) => new RegExp('(^|[ ,{])' + key + ':').test(l));
+    assert(line, 'DEFAULT_PREFS has ' + key);
+    assert(!/\/\/.*\b/.test(line.slice(0, line.search(new RegExp('(^|[ ,{])' + key + ':')) + 1)), key + ' is not inside a comment');
+  }
+  console.log('ok default settings');
 })().catch((e) => { console.error('FAIL', e); process.exit(1); });

@@ -24,7 +24,8 @@ const DEFAULT_PREFS = {
   goal: 0, // daily word goal, 0 = off
   fullscreen: true,
   readScope: 'chapter', centerMode: 'strict', justify: true, fmtbar: true, bookGoal: 0, autoUpdate: true, // text slides sideways so the caret stays in the middle
-  accent: 'amber', titlePage: null, // null = automatic: a title page for a book that has a title showSession: false, richPaste: true, pageNumbers: true, focus: 'off', streak: { last: '', count: 0, best: 0 },
+  accent: 'amber', titlePage: null, // null = not chosen yet, the title page is ticked
+  showSession: false, richPaste: true, pageNumbers: true, focus: 'off', streak: { last: '', count: 0, best: 0 },
   recent: [],
   lastPath: null,
 };
