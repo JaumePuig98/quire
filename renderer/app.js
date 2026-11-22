@@ -1865,6 +1865,36 @@
   }
   loadSpellLangs();
   window.api.onUpdateReady((v) => toast('Version ' + (v || '') + ' is ready. It installs when you close Quire.'));
+  // Settings, About: the version, whether this copy updates itself, and a button to check now
+  const KIND_TEXT = { installed: 'installed version', portable: 'portable version', dev: 'development run' };
+  function showUpdate(st, kind) {
+    const el = $('#updateStatus'), chk = $('#updateCheck'), inst = $('#updateInstall');
+    if (!el) return;
+    const k = kind || aboutKind;
+    let t = '';
+    if (k === 'portable') t = 'The portable version does not update itself. Download a newer one from the link below.';
+    else if (k === 'dev') t = 'Updates are off while running from source.';
+    else if (st.status === 'checking') t = 'Checking for updates\u2026';
+    else if (st.status === 'downloading') t = 'Downloading version ' + (st.version || '') + (st.percent ? ' (' + st.percent + '%)' : '') + '\u2026';
+    else if (st.status === 'ready') t = 'Version ' + (st.version || '') + ' is ready. It installs when you close Quire, or restart now.';
+    else if (st.status === 'current') t = 'You are up to date.';
+    else if (st.status === 'error') t = 'Could not check for updates. Are you online? You can also get the newest version from the link below.';
+    else t = 'Updates are checked when Quire starts.';
+    el.textContent = t;
+    const canCheck = k === 'installed';
+    chk.hidden = !canCheck; chk.disabled = st.status === 'checking' || st.status === 'downloading' || st.status === 'ready';
+    inst.hidden = !(canCheck && st.status === 'ready');
+  }
+  let aboutKind = 'installed';
+  window.api.appInfo().then((i) => {
+    aboutKind = i.kind;
+    $('#aboutVersion').textContent = 'version ' + i.version;
+    $('#aboutKind').textContent = KIND_TEXT[i.kind] || '';
+    showUpdate(i.update || { status: 'idle' }, i.kind);
+  }).catch(() => {});
+  window.api.onUpdateState((st) => showUpdate(st));
+  $('#updateCheck').addEventListener('click', async () => { showUpdate({ status: 'checking' }); showUpdate(await window.api.updateCheck()); });
+  $('#updateInstall').addEventListener('click', () => window.api.updateInstall());
   $('#fmtToggle').addEventListener('mousedown', (e) => e.preventDefault());
   $('#fmtToggle').addEventListener('click', () => savePrefs({ fmtbar: prefs.fmtbar === false }));
   // keyboard: the top bar opens with F10 or when it gets focus; the Mode menu works with the arrow keys

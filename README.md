@@ -15,7 +15,7 @@ Get the installer from the [**Releases**](../../releases/latest) page:
 
 **Windows will warn you the first time.** Quire is not code-signed (a signing certificate costs money and is not worth it for a small free project), so Windows SmartScreen shows "Windows protected your PC". Click **More info**, then **Run anyway**. The warning is about the missing signature, not about anything found in the file.
 
-The installed version checks for a new release when it starts, downloads it quietly and installs it the next time you close Quire. You can turn this off in Settings, under Language.
+The installed version checks for a new release when it starts, downloads it quietly and installs it the next time you close Quire. Settings, under **About**, shows which version you have, lets you check for updates right away and turns automatic checking off.
 
 ## What it does
 
@@ -94,7 +94,7 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 ## Settings
 
-Press Ctrl+, to open Settings. Sections: Appearance, Page, Spacing, Writing line, Goals and Language. Every slider has a number you can type and a small arrow to put it back to its default. **Reset all** restores everything.
+Press Ctrl+, to open Settings. Sections: Appearance, Page, Spacing, Writing line, Goals, Language and About (your version and updates). Every slider has a number you can type and a small arrow to put it back to its default. **Reset all** restores everything.
 
 ![Dark theme](docs/writing-dark.png)
 

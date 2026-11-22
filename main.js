@@ -46,19 +46,42 @@ const isDark = () => (prefs.theme === 'system' ? nativeTheme.shouldUseDarkColors
 const BG = { light: '#F4F1EA', dark: '#181715' };
 
 /* ------------------------------ updates ------------------------------ */
-// Installed copies check GitHub Releases once at start, download quietly and install when the app is closed.
-// The portable build and development runs never update themselves.
+// Installed copies check GitHub Releases at start (unless switched off), download quietly and install when the app is closed.
+// The portable build and development runs never update themselves. Settings, About shows the state and can check on request.
+const installKind = () => (!app.isPackaged ? 'dev' : process.env.PORTABLE_EXECUTABLE_FILE ? 'portable' : 'installed');
+let updater = null;
+let updateState = { status: 'idle' }; // idle | checking | downloading | ready | current | error
+function pushUpdate(st) {
+  updateState = st;
+  if (win && !win.isDestroyed()) win.webContents.send('update:state', st);
+}
 function setupUpdates() {
-  if (!app.isPackaged || process.env.PORTABLE_EXECUTABLE_FILE || prefs.autoUpdate === false) return;
+  if (installKind() !== 'installed') return;
   try {
     const { autoUpdater } = require('electron-updater');
+    updater = autoUpdater;
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.on('update-downloaded', (info) => { if (win && !win.isDestroyed()) win.webContents.send('update:ready', info && info.version); });
-    autoUpdater.on('error', () => { /* offline or no release: stay quiet */ });
-    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 8000);
+    autoUpdater.on('checking-for-update', () => pushUpdate({ status: 'checking' }));
+    autoUpdater.on('update-available', (info) => pushUpdate({ status: 'downloading', version: info && info.version, percent: 0 }));
+    autoUpdater.on('download-progress', (pr) => pushUpdate({ status: 'downloading', version: updateState.version, percent: Math.round((pr && pr.percent) || 0) }));
+    autoUpdater.on('update-not-available', () => pushUpdate({ status: 'current', checked: Date.now() }));
+    autoUpdater.on('update-downloaded', (info) => {
+      pushUpdate({ status: 'ready', version: info && info.version });
+      if (win && !win.isDestroyed()) win.webContents.send('update:ready', info && info.version);
+    });
+    autoUpdater.on('error', () => pushUpdate({ status: 'error' })); // offline or no release: the About page says so, nothing pops up
+    if (prefs.autoUpdate !== false) setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 8000);
   } catch (err) { /* updates are optional */ }
 }
+ipcMain.handle('app:info', () => ({ version: app.getVersion(), kind: installKind(), update: updateState }));
+ipcMain.handle('update:check', async () => {
+  if (!updater) return { status: 'unsupported', kind: installKind() };
+  if (updateState.status === 'checking' || updateState.status === 'downloading' || updateState.status === 'ready') return updateState;
+  try { await updater.checkForUpdates(); } catch (err) { pushUpdate({ status: 'error' }); }
+  return updateState;
+});
+ipcMain.handle('update:install', () => { if (updater && updateState.status === 'ready') { updater.quitAndInstall(); return true; } return false; });
 
 /* ------------------------------ window ------------------------------ */
 let win = null;

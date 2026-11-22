@@ -100,6 +100,10 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
     await page.click('#resetAll'); await page.waitForTimeout(200);
     ok(await page.evaluate(() => !document.querySelector('[data-pref=weight]').disabled), 'Reset all restores the font and weight');
     ok((await page.$$eval('.st-nav button', (bs) => bs.map((b) => b.textContent.trim()))).every((t) => /^[A-Za-z ]+$/.test(t)), 'settings section names are clean text');
+    await page.click('.st-nav [data-sec=about]');
+    const pkgVersion = require('../package.json').version;
+    ok((await page.innerText('#aboutVersion')).includes(pkgVersion), 'Settings, About shows the app version (' + pkgVersion + ')');
+    ok((await page.innerText('#updateStatus')).length > 10 && (await page.isHidden('#updateCheck')), 'a development run says updates are off and has no check button');
     await page.click('.st-nav [data-sec=space]');
     const ln = page.locator('input[data-num=lineHeight]');
     await ln.fill('2.05'); await ln.press('Enter');

@@ -127,6 +127,7 @@
         <button type="button" data-sec="line">Writing line</button>
         <button type="button" data-sec="goals">Goals</button>
         <button type="button" data-sec="lang">Language</button>
+        <button type="button" data-sec="about">About</button>
       </nav>
       <div class="st-pane">
       <section data-secpane="look">
@@ -172,7 +173,13 @@
       <section data-secpane="lang" hidden>
         <div class="row"><span>Spellcheck language</span><select id="spellA" aria-label="Spellcheck language"></select></div>
         <div class="row"><span>Also check</span><select id="spellB" aria-label="Second spellcheck language"></select></div>
+      </section>
+      <section data-secpane="about" hidden>
+        <p class="aboutline"><strong>Quire</strong> <span id="aboutVersion"></span> <span class="hint" id="aboutKind"></span></p>
+        <p class="small" id="updateStatus" role="status" aria-live="polite"></p>
+        <div class="row"><button type="button" id="updateCheck">Check for updates</button><button type="button" id="updateInstall" class="primary" hidden>Restart and install</button></div>
         <label class="check"><input type="checkbox" data-pref="autoUpdate"> Check for updates automatically <span class="hint">installed version only</span></label>
+        <p class="small"><a href="https://github.com/JaumePuig98/quire/releases" target="_blank" rel="noopener">All versions and downloads</a> &middot; <a href="https://github.com/JaumePuig98/quire/issues" target="_blank" rel="noopener">Report a problem</a></p>
       </section>
       </div>
     </div>

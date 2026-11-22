@@ -400,3 +400,6 @@ body.fmthidden #fmtToggle{font-size:0}
 #chapterList .toc button{box-sizing:border-box;min-width:0;max-width:100%}
 #chapterList .pn{min-width:24px;font-weight:600}
 #chapterList .pn.off{color:rgb(var(--muted));text-decoration:line-through;opacity:.7}
+
+.aboutline{margin:4px 0 6px;font-size:15px}
+#settings .st-pane a{color:inherit;text-decoration:underline;text-underline-offset:2px}
