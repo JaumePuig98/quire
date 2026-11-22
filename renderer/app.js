@@ -1877,9 +1877,9 @@
     else if (st.status === 'checking') t = 'Checking for updates\u2026';
     else if (st.status === 'downloading') t = 'Downloading version ' + (st.version || '') + (st.percent ? ' (' + st.percent + '%)' : '') + '\u2026';
     else if (st.status === 'ready') t = 'Version ' + (st.version || '') + ' is ready. It installs when you close Quire, or restart now.';
-    else if (st.status === 'current') t = 'You are up to date.';
-    else if (st.status === 'error') t = 'Could not check for updates. Are you online? You can also get the newest version from the link below.';
-    else t = 'Updates are checked when Quire starts.';
+    else if (st.status === 'current') t = 'You are up to date' + (st.checked ? ' (checked ' + new Date(st.checked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')' : '') + '.';
+    else if (st.status === 'error') t = 'Could not check for updates' + (st.message ? ' (' + st.message + ')' : '') + '. Quire works offline and tries again later. You can also get the newest version from the link below.';
+    else t = 'Quire checks when it starts and every few hours while it is open.';
     el.textContent = t;
     const canCheck = k === 'installed';
     chk.hidden = !canCheck; chk.disabled = st.status === 'checking' || st.status === 'downloading' || st.status === 'ready';

@@ -15,7 +15,7 @@ Get the installer from the [**Releases**](../../releases/latest) page:
 
 **Windows will warn you the first time.** Quire is not code-signed (a signing certificate costs money and is not worth it for a small free project), so Windows SmartScreen shows "Windows protected your PC". Click **More info**, then **Run anyway**. The warning is about the missing signature, not about anything found in the file.
 
-The installed version checks for a new release when it starts, downloads it quietly and installs it the next time you close Quire. Settings, under **About**, shows which version you have, lets you check for updates right away and turns automatic checking off.
+The installed version checks for a new release when it starts and every few hours while it is open (nothing happens if you are offline), downloads it quietly and installs it the next time you close Quire. Settings, under **About**, shows which version you have, lets you check for updates right away and turns automatic checking off.
 
 ## What it does
 

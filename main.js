@@ -55,6 +55,15 @@ function pushUpdate(st) {
   updateState = st;
   if (win && !win.isDestroyed()) win.webContents.send('update:state', st);
 }
+const CHECK_EVERY = 3 * 60 * 60 * 1000; // a writing app stays open for days, so look again every few hours
+let lastCheck = 0;
+function updLog(line) { // userData/updater.log: what the updater did and why it failed, kept small
+  try {
+    const f = userFile('updater.log');
+    try { if (fs.statSync(f).size > 100000) fs.writeFileSync(f, ''); } catch (e) { /* no log yet */ }
+    fs.appendFileSync(f, new Date().toISOString() + ' ' + String(line).replace(/\s+/g, ' ').slice(0, 400) + '\n');
+  } catch (e) { /* logging must never break the app */ }
+}
 function setupUpdates() {
   if (installKind() !== 'installed') return;
   try {
@@ -62,6 +71,8 @@ function setupUpdates() {
     updater = autoUpdater;
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.logger = { info: (m) => updLog('info ' + m), warn: (m) => updLog('warn ' + m), error: (m) => updLog('error ' + m), debug: () => {} };
+    updLog('start version ' + app.getVersion() + ' arch ' + process.arch);
     autoUpdater.on('checking-for-update', () => pushUpdate({ status: 'checking' }));
     autoUpdater.on('update-available', (info) => pushUpdate({ status: 'downloading', version: info && info.version, percent: 0 }));
     autoUpdater.on('download-progress', (pr) => pushUpdate({ status: 'downloading', version: updateState.version, percent: Math.round((pr && pr.percent) || 0) }));
@@ -70,15 +81,24 @@ function setupUpdates() {
       pushUpdate({ status: 'ready', version: info && info.version });
       if (win && !win.isDestroyed()) win.webContents.send('update:ready', info && info.version);
     });
-    autoUpdater.on('error', () => pushUpdate({ status: 'error' })); // offline or no release: the About page says so, nothing pops up
-    if (prefs.autoUpdate !== false) setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 8000);
-  } catch (err) { /* updates are optional */ }
+    autoUpdater.on('error', (err) => pushUpdate({ status: 'error', message: String((err && err.message) || err || '').split('\n')[0].slice(0, 160) })); // offline is fine: the app works without it
+    const auto = (why) => {
+      if (prefs.autoUpdate === false) return;
+      if (['checking', 'downloading', 'ready'].includes(updateState.status)) return;
+      lastCheck = Date.now(); updLog('check (' + why + ')');
+      autoUpdater.checkForUpdates().catch(() => {});
+    };
+    setTimeout(() => auto('start'), 8000);
+    setInterval(() => auto('timer'), CHECK_EVERY).unref();
+    app.on('browser-window-focus', () => { if (Date.now() - lastCheck > 60 * 60 * 1000) auto('focus'); }); // back after a break
+  } catch (err) { updLog('setup failed ' + err); }
 }
 ipcMain.handle('app:info', () => ({ version: app.getVersion(), kind: installKind(), update: updateState }));
 ipcMain.handle('update:check', async () => {
   if (!updater) return { status: 'unsupported', kind: installKind() };
   if (updateState.status === 'checking' || updateState.status === 'downloading' || updateState.status === 'ready') return updateState;
-  try { await updater.checkForUpdates(); } catch (err) { pushUpdate({ status: 'error' }); }
+  lastCheck = Date.now(); updLog('check (button)');
+  try { await updater.checkForUpdates(); } catch (err) { pushUpdate({ status: 'error', message: String((err && err.message) || err).split('\n')[0].slice(0, 160) }); }
   return updateState;
 });
 ipcMain.handle('update:install', () => { if (updater && updateState.status === 'ready') { updater.quitAndInstall(); return true; } return false; });
