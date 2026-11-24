@@ -186,7 +186,10 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
     ok((await model()).text.join('').includes('THIRD OUTSIDE EDIT'), 'Load theirs brings the disk version in');
 
     /* ---- export menu: all three boxes start ticked ---- */
-    ok(await page.evaluate(() => document.getElementById('exportNotes').defaultChecked), 'Include notes starts ticked in the export menu');
+    await page.keyboard.press('Control+e'); await page.waitForTimeout(250);
+    ok((await page.inputValue('#exportNotes')) === 'comments', 'notes are included (as comments) by default in the export menu');
+    ok(['letter', 'a4'].includes(await page.inputValue('#exportPage')) && (await page.inputValue('#exportMargins')) === 'normal', 'page size and margins have sensible defaults');
+    await page.keyboard.press('Escape');
 
     /* ---- reading: current chapter or whole book ---- */
     await page.evaluate(() => { const A = window.__app; A.addChapter(); });
@@ -236,6 +239,15 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       ok((await page.textContent('#exportChaptersBtn')).includes('1 of 2'), 'unticking a chapter shows 1 of 2');
       await page.keyboard.press('Escape');
 
+      // a .draft saved with a byte-order mark (Notepad, PowerShell) opens
+      const bomFile = path.join(tmp, 'bom.draft');
+      const bd = D.newDoc(); bd.title = 'Bom Book';
+      fs.writeFileSync(bomFile, '\uFEFF' + D.serializeDraft(bd));
+      await page.evaluate(async (p) => { await window.__app.openResult(await window.api.openPath(p)); }, bomFile);
+      await page.waitForTimeout(300);
+      ok(await page.evaluate(() => window.__app.doc && window.__app.doc.title === 'Bom Book'), 'a draft file with a byte-order mark opens');
+      ok(!(await page.evaluate((p) => window.api.docChanged(p), bomFile)), 'and is not reported as changed on disk');
+
       // rich paste: keeps bold, italic and headings, drops the rest
       await page.evaluate(() => window.__app.loadDoc(window.DocFmt.newDoc(), null)); await page.waitForTimeout(300);
       await page.click('#editor');
@@ -248,6 +260,25 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       await page.waitForTimeout(300);
       const pm = await page.evaluate(() => { window.__app.syncFromDom(); return window.__app.doc.chapters[0].blocks.map((b) => b.t + ':' + b.runs.map((r) => (r.b ? '*' : '') + (r.i ? '/' : '') + r.text).join('')); });
       ok(pm.join('|').includes('h2:Head') && pm.join('|').includes('*bold') && pm.join('|').includes('/slanted') && pm.join('|').includes('p:plain from Docs') && !pm.join('|').includes('alert') && !pm.join('|').includes('*plain'), 'pasting formatted text keeps bold, italic and headings only (' + pm.join(' | ') + ')');
+
+      // smart typography: curly quotes and a real ellipsis, only when switched on
+      const typed = async (style, text) => {
+        await page.evaluate((st) => { window.__app.savePrefs({ smartQuotes: st }); window.__app.loadDoc(window.DocFmt.newDoc(), null); }, style);
+        await page.waitForTimeout(250); await page.click('#editor'); await page.keyboard.type(text);
+        return page.evaluate(() => { window.__app.syncFromDom(); return window.__app.doc.chapters[0].blocks.map((b) => b.runs.map((r) => r.text).join('')).join('|'); });
+      };
+      ok((await typed('off', '"Hi" it\'s...')) === '"Hi" it\'s...', 'smart quotes off: what you type stays as typed');
+      ok((await typed('en', '"Hello," she said. It\'s \'fine\'... ok')) === '\u201cHello,\u201d she said. It\u2019s \u2018fine\u2019\u2026 ok', 'English smart quotes, apostrophe and ellipsis');
+      ok((await typed('es', '"Hola" y (\"si\")')) === '\u00abHola\u00bb y (\u00absi\u00bb)', 'Spanish and Catalan guillemets');
+      ok((await typed('de', '"Hallo"')) === '\u201eHallo\u201c', 'German quotes');
+      await page.evaluate(() => window.__app.savePrefs({ smartQuotes: 'off' }));
+
+      // scene break: Ctrl+Shift+Enter puts a centered * * * and continues below
+      await page.evaluate(() => window.__app.loadDoc(window.DocFmt.newDoc(), null)); await page.waitForTimeout(250);
+      await page.click('#editor'); await page.keyboard.type('Before'); await page.keyboard.press('Control+Shift+Enter'); await page.keyboard.type('After');
+      const sbk = await page.evaluate(() => { window.__app.syncFromDom(); return window.__app.doc.chapters[0].blocks.map((b) => b.runs.map((r) => r.text).join('')); });
+      ok(sbk.join('|') === 'Before|* * *|After', 'Ctrl+Shift+Enter inserts a scene break and the caret continues below it (' + sbk.join('|') + ')');
+      ok(await page.evaluate(() => !!document.querySelector('#editor p.sbreak')), 'the scene break is shown centered');
 
       await page.waitForTimeout(900);
       await page.keyboard.press('Control+z'); await page.waitForTimeout(300);
@@ -298,6 +329,40 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       ok(dim2 && dim2.join('|').includes('The lamp burned low.') && !dim2.join('|').includes('Another lamp') && !dim2.join('|').includes('half-written'), 'paragraph focus dims other paragraphs');
       await page.evaluate(() => window.__app.savePrefs({ focus: 'off' })); await page.waitForTimeout(200);
       ok(await page.evaluate(() => !CSS.highlights.get('focusdim') || CSS.highlights.get('focusdim').size === 0), 'focus off removes the dimming');
+
+      // compare an earlier version with the current text
+      const cmpInfo = await page.evaluate(async () => {
+        const A = window.__app, D = window.DocFmt;
+        const old = D.newDoc(); old.id = 'cmpdoc1'; old.chapters[0].blocks = [{ t: 'p', runs: [{ text: 'The quick brown fox jumps over the dog' }] }, { t: 'p', runs: [{ text: 'A paragraph that will vanish completely' }] }];
+        await window.api.versionsSave({ id: 'cmpdoc1', text: D.serializeDraft(old), name: 'Old draft' });
+        const it = (await window.api.versionsList('cmpdoc1'))[0];
+        const cur = D.newDoc(); cur.chapters[0].blocks = [{ t: 'p', runs: [{ text: 'The quick red fox jumps over the dog' }] }, { t: 'p', runs: [{ text: 'Something wholly new and different arrives' }] }];
+        A.loadDoc(cur, null); await new Promise((r) => setTimeout(r, 300));
+        await A.openCompare(it);
+        const r = { open: !document.querySelector('#cmpDlg').hidden, ins: [...document.querySelectorAll('#cmpBody ins')].map((x) => x.textContent.trim()), del: [...document.querySelectorAll('#cmpBody del')].map((x) => x.textContent.trim()), sum: document.querySelector('#cmpSummary').textContent };
+        document.querySelector('#cmpClose').click();
+        await window.api.versionsDelete(it.file);
+        return r;
+      });
+      ok(cmpInfo.open && cmpInfo.ins.includes('red') && cmpInfo.del.includes('brown') && /1 paragraph edited/.test(cmpInfo.sum), 'compare shows what changed between a version and now (' + cmpInfo.sum + ')');
+
+      // chapter targets and e-book export
+      await page.evaluate(() => window.__app.loadDoc(window.DocFmt.newDoc(), null)); await page.waitForTimeout(250);
+      await page.click('#editor'); await page.keyboard.type('Some words to count here now.'); await page.waitForTimeout(300);
+      await page.evaluate(() => { const A = window.__app; A.syncFromDom(); A.doc.chapters[0].goal = 10; });
+      await page.keyboard.press('Control+Shift+O'); await page.waitForTimeout(400);
+      ok((await page.locator('#chapterList .ch-bar').count()) === 1, 'a chapter with a target shows a progress bar');
+      ok((await page.getAttribute('#chapterList .ch-bar', 'aria-valuenow')) !== null, 'the progress bar is exposed to screen readers');
+      await page.keyboard.press('Escape');
+      const epubOut = path.join(tmp, 'book.epub');
+      await page.evaluate(async (o) => { const A = window.__app; await window.api.exportDoc({ format: 'epub', doc: A.snapshotDoc(), suggested: 'x', path: o, opts: { titlePage: true } }); }, epubOut);
+      const eh = fs.readFileSync(epubOut);
+      ok(eh.slice(0, 2).toString() === 'PK' && eh.includes('application/epub+zip'), 'the app exports an .epub file');
+
+      // diagnostics are copied and contain the essentials
+      const dg = await page.evaluate(async () => { const n = await window.api.diagnostics(); return n; });
+      ok(dg > 100, 'diagnostics are produced (' + dg + ' characters)');
+
     }
 
     /* ---- chapters panel: table of contents ---- */

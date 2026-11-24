@@ -25,9 +25,9 @@ The installed version checks for a new release when it starts and every few hour
 * **Your page, your way.** Light and dark themes, three bundled fonts, text weight, size and width, and full control of the spacing between lines, paragraphs, headings and quotes.
 * **Review mode** for proof-reading, with typos and notes standing out. Spellcheck works in several languages.
 * **Reading mode** to read a chapter or the whole book as a reader would.
-* **Goals** (optional): a daily word goal, a book target, a streak of days in a row and the words written this session.
+* **Goals** (optional): a daily word goal, a book target, a streak of days in a row and the words written this session. Each chapter can also have its own word target: click the word count of a chapter in the Chapters panel.
 * **Your work is safe.** Automatic saving, a recovery copy if the app closes unexpectedly, and a History of snapshots you can open at any time. You can name a version, for example "Before the rewrite".
-* **Open and export.** Open `.draft`, Markdown, plain text and Word files. Export to Word, PDF, Markdown or plain text, choosing which chapters go in and whether to include the title page and page numbers.
+* **Open and export.** Open `.draft`, Markdown, plain text and Word files. Export to Word, PDF, an e-book (`.epub`), Markdown or plain text, choosing the chapters, page size and margins, and whether to include the title page and page numbers.
 
 ![Chapters and settings](docs/chapters.png)
 
@@ -48,6 +48,7 @@ You can also drag a file onto the window to open it.
 | Bold / italic / underline | Ctrl+B / Ctrl+I / Ctrl+U |
 | Heading 1 / heading 2 / normal text | Ctrl+1 / Ctrl+2 / Ctrl+0 (press again to turn off) |
 | Quote | Ctrl+Shift+Q (press again to turn off) |
+| Scene break (a centered * * * between two parts of a chapter) | Ctrl+Shift+Enter |
 | Add or edit a note on selected text | Ctrl+Alt+M |
 | Undo / redo (each chapter keeps its own) | Ctrl+Z / Ctrl+Y |
 | Find / find and replace | Ctrl+F / Ctrl+H (F3 for the next match; **List** shows every match) |
@@ -71,6 +72,10 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 **Notes.** Select text and press Ctrl+Alt+M. A small icon appears in the margin: click it to open or close the note, or hover to read it. Notes can be included when you export, as comments in Word.
 
+**Smart quotes** (Settings, off by default): curly quotes in English, Spanish and Catalan (« ») or German style, and three dots become one ellipsis character. Turn it on only if you want the app to change what you type.
+
+**Comparing versions.** In History, **Compare** shows what changed between an earlier version and the text now: struck red words were in the old version, green words are new. You can open that version as a new document from there.
+
 **Pasting** keeps bold, italic, underline, headings and quotes and drops everything else. Use Ctrl+Shift+V for plain text.
 
 ![Spacing settings](docs/settings.png)
@@ -85,7 +90,9 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 ## Exporting
 
-* **Word, PDF, Markdown or plain text.** Word and PDF are A4 with 2.5 cm margins.
+* **Word, PDF, e-book, Markdown or plain text.** Pick the **page size** (A4, US Letter, A5, trade paperback 6 x 9 in, digest) and the **margins** (narrow, normal, wide) in the Export menu. The e-book is an EPUB 3 file that opens in Kindle apps, Apple Books, Kobo and most readers.
+* **Notes** can be left out, exported as comments (Word) or as real footnotes. With footnotes, Word gets proper footnotes, the PDF gets a list at the end of each chapter and the e-book gets linked endnotes.
+* **Scene breaks** (`* * *`) are centered in every format. In Markdown a line of `---` or `***` becomes a scene break when you open the file.
 * **Choose chapters** to export just part of a book.
 * **Title page** with title, subtitle, author and an extra line such as "A novel". It is ticked by default when the book has a title; empty fields are left out. The title page is never numbered or counted, so chapter one is page 1.
 * **Page numbers** can be switched off for the whole export, or for single chapters with the **#** button in the Chapters panel. The page is still counted, only the number is hidden.
@@ -94,7 +101,7 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 ## Settings
 
-Press Ctrl+, to open Settings. Sections: Appearance, Page, Spacing, Writing line, Goals, Language and About (your version and updates). Every slider has a number you can type and a small arrow to put it back to its default. **Reset all** restores everything.
+Press Ctrl+, to open Settings. Sections: Appearance, Page, Spacing, Writing line, Goals, Language and About (your version, updates and a **Copy diagnostics** button to paste into a bug report). Every slider has a number you can type and a small arrow to put it back to its default. **Reset all** restores everything.
 
 ![Dark theme](docs/writing-dark.png)
 

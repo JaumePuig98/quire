@@ -188,7 +188,7 @@
         }
         inner += h;
       }
-      const cls = D.isCite(b) ? ' class="cite"' : '';
+      const cls = D.isCite(b) ? ' class="cite"' : D.isBreak(b) ? ' class="sbreak"' : '';
       return '<' + tag + cls + '>' + (inner || '<br>') + '</' + tag + '>';
     }).join('');
   }
@@ -832,9 +832,24 @@
   function command(cmd) {
     if (cmd === 'note') return addNote();
     if (reading) return;
+    if (cmd === 'break') return insertBreak();
     editor.focus();
     if (cmd === 'bold' || cmd === 'italic' || cmd === 'underline') { document.execCommand(cmd); afterEdit(); }
     else setBlock(cmd);
+  }
+  // A scene break: a centered * * * between two parts of a chapter. The caret lands in a fresh paragraph after it.
+  function insertBreak() {
+    if (reading || !doc) return;
+    editor.focus(); commitHistory();
+    const b = currentBlock();
+    const brk = document.createElement('p'); brk.className = 'sbreak'; brk.textContent = '* * *';
+    const next = document.createElement('p'); next.innerHTML = '<br>';
+    if (!b) editor.append(brk, next);
+    else if (!b.textContent.trim()) { b.replaceWith(brk); brk.after(next); }
+    else { b.after(brk); brk.after(next); }
+    const r = document.createRange(); r.setStart(next, 0); r.collapse(true);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    afterEdit();
   }
   function afterEdit() { commitHistory(); markDirty(); scheduleCount(); updateActive(); kick(true); layoutMarks(); }
   function updateActive() {
@@ -1338,7 +1353,21 @@
       inp.addEventListener('focus', () => { if (i !== cur) selectChapter(i); });
       inp.addEventListener('input', () => { c.title = inp.value; markDirty(); updateStatus(); });
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); closeOutline(); } });
-      const wc = document.createElement('span'); wc.className = 'wc'; wc.textContent = (wordCounts[i] || 0).toLocaleString() + ' words';
+      // the word count doubles as the chapter's target: click it to set one (empty or 0 removes it)
+      const goal = c.goal > 0 ? c.goal : 0, count = wordCounts[i] || 0;
+      const wc = document.createElement('button'); wc.type = 'button'; wc.className = 'wc';
+      wc.textContent = count.toLocaleString() + (goal ? ' / ' + goal.toLocaleString() : '') + ' words';
+      wc.title = goal ? 'Chapter target. Click to change it.' : 'Click to set a word target for this chapter.';
+      wc.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const g = document.createElement('input'); g.type = 'number'; g.min = 0; g.max = 2000000; g.step = 100; g.className = 'ch-goal';
+        g.value = goal || ''; g.placeholder = 'Target words'; g.setAttribute('aria-label', 'Word target for chapter ' + (i + 1) + ', empty removes it');
+        wc.replaceWith(g); g.focus(); g.select();
+        let done = false;
+        const commit = () => { if (done) return; done = true; const v = Math.max(0, Math.min(2000000, Math.floor(+g.value || 0))); if (v) c.goal = v; else delete c.goal; markDirty(); renderOutline(); };
+        g.addEventListener('blur', commit);
+        g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); commit(); } else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); done = true; renderOutline(); } });
+      });
       const mk = (label, title, fn, dis) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.disabled = !!dis; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b; };
       const nb = mk('#', c.nonum ? 'Page numbers are hidden on this chapter. Click to show them.' : 'Page numbers are shown on this chapter. Click to hide them (the pages are still counted).', () => { c.nonum = !c.nonum; if (!c.nonum) delete c.nonum; markDirty(); renderOutline(); });
       nb.className = 'pn' + (c.nonum ? ' off' : ''); nb.setAttribute('aria-pressed', String(!c.nonum));
@@ -1350,6 +1379,13 @@
         mk('\u2193', 'Move chapter down', () => moveChapter(i, 1), i === doc.chapters.length - 1),
         mk('\u00d7', 'Delete chapter', () => deleteChapter(i), doc.chapters.length < 2));
       li.append(top, tools);
+      if (goal) {
+        const pct = Math.min(100, Math.round((count / goal) * 100));
+        const bar = document.createElement('div'); bar.className = 'ch-bar' + (count >= goal ? ' done' : '');
+        bar.setAttribute('role', 'progressbar'); bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', String(goal)); bar.setAttribute('aria-valuenow', String(Math.min(count, goal)));
+        bar.setAttribute('aria-label', 'Chapter ' + (i + 1) + ' progress: ' + pct + ' percent of its target');
+        const fill = document.createElement('i'); fill.style.width = pct + '%'; bar.appendChild(fill); li.appendChild(bar);
+      }
       li.addEventListener('click', (e) => { if (e.target === li || e.target === num || e.target === wc || e.target === top || e.target === tools) selectChapter(i); });
       // a table of contents of the chapter: its headings, a click goes there
       const heads = [];
@@ -1443,7 +1479,21 @@
   let exportSel = null;
   // ticked unless the person has switched it off once (it only appears when the book has a title)
   const wantTitlePage = () => (prefs.titlePage == null ? true : !!prefs.titlePage);
+  // Letter in Canada and the US, A4 elsewhere, until the person picks one
+  const autoPage = () => (/-(US|CA)$/i.test(navigator.language || '') ? 'letter' : 'a4');
+  const PAGE_NAMES = { letter: 'US Letter', a4: 'A4', a5: 'A5', trade: 'Trade paperback 6 x 9 in', digest: 'Digest 5.5 x 8.5 in' };
+  const MARGIN_NAMES = { narrow: 'Narrow (1.5 cm)', normal: 'Normal (2.5 cm)', wide: 'Wide (3.2 cm)' };
+  const pageNow = () => (PAGE_NAMES[prefs.pageSize] ? prefs.pageSize : autoPage());
+  function fillExportSelects() {
+    const fill = (id, names) => { const el = $(id); if (!el.options.length) for (const k of Object.keys(names)) el.add(new Option(names[k], k)); };
+    fill('#exportPage', PAGE_NAMES); fill('#exportMargins', MARGIN_NAMES);
+    $('#exportPage').value = pageNow();
+    $('#exportMargins').value = MARGIN_NAMES[prefs.margins] ? prefs.margins : 'normal';
+    $('#exportNotes').value = ['off', 'comments', 'footnotes'].includes(prefs.notesMode) ? prefs.notesMode : 'comments';
+    $('#pdfHint').textContent = PAGE_NAMES[pageNow()].split(' ')[pageNow() === 'letter' ? 1 : 0] + ' \u00b7 .pdf';
+  }
   function renderExportChapters() {
+    fillExportSelects();
     $('#exportTitlePage').checked = wantTitlePage();
     const box = $('#exportChapters'), list = $('#exportChapterList'), btn = $('#exportChaptersBtn');
     if (!doc || doc.chapters.length < 2) { box.hidden = true; return; }
@@ -1476,14 +1526,14 @@
   async function doExport(format) {
     $('#exportMenu').hidden = true;
     snapshotDoc();
-    const ext = { docx: '.docx', pdf: '.pdf', md: '.md', txt: '.txt' }[format];
-    const label = { docx: 'Word document', pdf: 'PDF', md: 'Markdown', txt: 'Plain text' }[format];
+    const ext = { docx: '.docx', pdf: '.pdf', md: '.md', txt: '.txt', epub: '.epub' }[format];
+    const label = { docx: 'Word document', pdf: 'PDF', md: 'Markdown', txt: 'Plain text', epub: 'e-book' }[format];
     const chosen = await pickFile({ mode: 'save', kind: 'export', title: 'Export as ' + label, name: D.slugify(docTitle()) === 'untitled' ? 'Untitled' : docTitle(), exts: [ext], ok: 'Export' });
     if (chosen === null) { if (!reading) editor.focus(); return; }
     toast('Preparing ' + format.toUpperCase() + '…');
     const r = await window.api.exportDoc({
       format, doc, suggested: docTitle(), path: chosen === 'system' ? undefined : chosen,
-      opts: { notes: $('#exportNotes').checked, font: prefs.font, justify: prefs.justify !== false, author: doc.author || undefined, titlePage: wantTitlePage(), pageNumbers: prefs.pageNumbers !== false, chapterIds: exportSel ? [...exportSel] : undefined },
+      opts: { notes: $('#exportNotes').value !== 'off', notesMode: $('#exportNotes').value, pageSize: $('#exportPage').value, margins: $('#exportMargins').value, lang: (prefs.spellLangs && prefs.spellLangs[0]) || navigator.language || 'en', font: prefs.font, justify: prefs.justify !== false, author: doc.author || undefined, titlePage: wantTitlePage(), pageNumbers: prefs.pageNumbers !== false, chapterIds: exportSel ? [...exportSel] : undefined },
     });
     if (r && r.error) await window.api.error('Export failed: ' + r.error);
     else if (r && r.path) toast('Exported to ' + baseName(r.path));
@@ -1529,6 +1579,11 @@
           } catch (e) { window.api.error(e.message); }
         });
         li.appendChild(b);
+        const cmp = document.createElement('button');
+        cmp.type = 'button'; cmp.className = 'vdel'; cmp.textContent = 'Compare';
+        cmp.setAttribute('aria-label', 'Compare ' + (it.name || new Date(it.time).toLocaleString()) + ' with the current text');
+        cmp.addEventListener('click', () => openCompare(it));
+        li.appendChild(cmp);
         if (it.name) {
           const x = document.createElement('button');
           x.type = 'button'; x.className = 'vdel'; x.textContent = 'Delete'; x.setAttribute('aria-label', 'Delete the version ' + it.name);
@@ -1545,13 +1600,63 @@
     $('#modal').hidden = false;
   }
 
+  // Compare an earlier version with what is on the page now: red struck text was there then, green text is new.
+  let cmpState = null;
+  async function openCompare(it) {
+    let old;
+    try { old = D.parseDraft(await window.api.versionsRead(it.file)); } catch (e) { window.api.error(e.message); return; }
+    const res = DocDiff.compare(old, snapshotDoc());
+    cmpState = { it, res };
+    $('#cmpTitle').textContent = 'Compare: ' + (it.name ? it.name + ', ' : '') + new Date(it.time).toLocaleString() + ' and now';
+    $('#cmpSummary').textContent = (res.added + res.removed + res.changed) === 0 ? 'No differences. The text is the same as that version.'
+      : res.changed + ' paragraph' + (res.changed === 1 ? '' : 's') + ' edited, ' + res.added + ' added, ' + res.removed + ' removed (about ' + res.words + ' words). Struck red text was in that version, green text is new.';
+    renderCompare();
+    $('#cmpDlg').hidden = false;
+    $('#cmpBody').focus();
+  }
+  function renderCompare() {
+    const body = $('#cmpBody'), only = $('#cmpOnly').checked;
+    body.innerHTML = '';
+    const rows = cmpState.res.rows, show = rows.map((r) => r.kind !== 'same');
+    // With "only what changed", keep one paragraph of context on each side so edits can be located.
+    const keep = rows.map((r, i) => !only || show[i] || show[i - 1] || show[i + 1] || (r.chapter && (show[i + 1] || show[i + 2])));
+    let gap = false;
+    rows.forEach((r, i) => {
+      if (!keep[i]) { gap = true; return; }
+      if (gap) { const g = document.createElement('p'); g.className = 'cmp-gap'; g.textContent = '\u00b7 \u00b7 \u00b7'; g.setAttribute('aria-hidden', 'true'); body.appendChild(g); gap = false; }
+      const p = document.createElement('p');
+      p.className = 'cmp-' + r.kind + (r.chapter ? ' cmp-ch' : '');
+      if (r.kind === 'chg') {
+        for (const part of r.parts) {
+          if (part.op === 'eq') p.append(document.createTextNode(part.text));
+          else { const e = document.createElement(part.op === 'add' ? 'ins' : 'del'); e.textContent = part.text; p.append(e); }
+        }
+      } else if (r.kind === 'add' || r.kind === 'del') {
+        const e = document.createElement(r.kind === 'add' ? 'ins' : 'del'); e.textContent = r.text; p.append(e);
+      } else p.textContent = r.text;
+      body.appendChild(p);
+    });
+  }
+  $('#cmpOnly').addEventListener('change', () => cmpState && renderCompare());
+  $('#cmpClose').addEventListener('click', () => { $('#cmpDlg').hidden = true; });
+  $('#cmpOpen').addEventListener('click', async () => {
+    if (!cmpState) return;
+    try {
+      const d = D.parseDraft(await window.api.versionsRead(cmpState.it.file));
+      $('#cmpDlg').hidden = true; $('#modal').hidden = true;
+      window.api.recoveryClear(); loadDoc(d, null, { dirty: true });
+      toast('Opened an earlier version. Save it under a new name to keep it.');
+    } catch (e) { window.api.error(e.message); }
+  });
+  $('#diagBtn').addEventListener('click', async () => { try { await window.api.diagnostics(); toast('Diagnostics copied. Paste them into your message.'); } catch (e) { toast('Could not copy diagnostics.'); } });
+
   /* ============================ panels ============================ */
   function closePanels() {
     if (activeNote && !$('#notePop').hidden) closeNotePop(true);
     ['#exportMenu', '#settings'].forEach((s) => ($(s).hidden = true));
     $('#outline').hidden = true;
   }
-  const anyPanelOpen = () => ['#exportMenu', '#settings', '#outline', '#notePop', '#modal', '#fileDlg'].some((s) => !$(s).hidden);
+  const anyPanelOpen = () => ['#exportMenu', '#settings', '#outline', '#notePop', '#modal', '#cmpDlg', '#fileDlg'].some((s) => !$(s).hidden);
   function placePopover(pop, btn, align) {
     const b = btn.getBoundingClientRect();
     const w = pop.offsetWidth;
@@ -1602,6 +1707,7 @@
       if (activeNote && !$('#notePop').hidden) { e.preventDefault(); closeNotePop(false); return; }
       if (!fb.hidden) { e.preventDefault(); closeFind(); return; }
       if (!$('#fileDlg').hidden) return;
+      if (!$('#cmpDlg').hidden) { $('#cmpDlg').hidden = true; return; }
       if (!$('#modal').hidden) { $('#modal').hidden = true; return; }
       if (anyPanelOpen()) { e.preventDefault(); closePanels(); if (!reading) editor.focus(); }
       return;
@@ -1636,6 +1742,7 @@
       case 'h': e.preventDefault(); openFind(true); break;
       case ',': e.preventDefault(); toggle('#settings', '#btnSettings', 'right'); break;
       case '/': e.preventDefault(); savePrefs({ fmtbar: prefs.fmtbar === false }); break;
+      case 'enter': if (shift) { e.preventDefault(); insertBreak(); } break;
       case 'pagedown': e.preventDefault(); selectChapter(cur + 1); break;
       case 'pageup': e.preventDefault(); selectChapter(cur - 1); break;
       default: break;
@@ -1648,7 +1755,7 @@
     const b = currentBlock();
     if (!b) return;
     if (b.tagName === 'BLOCKQUOTE') b.classList.toggle('cite', /^\s*[-\u2013\u2014]/.test(b.textContent));
-    else b.classList.remove('cite');
+    else { b.classList.remove('cite'); b.classList.toggle('sbreak', b.tagName === 'P' && /^\s*(\*\s*){3}$/.test(b.textContent)); }
   }
   // Enter inside a quote starts another quote line. Enter on an empty line, or after the author line, leaves the quote.
   editor.addEventListener('keydown', (e) => {
@@ -1710,7 +1817,40 @@
     if (document.queryCommandState(cmd)) document.execCommand(cmd); // keep typing in normal text
     return true;
   }
+  // Smart typography (off by default): curly quotes in the chosen style, and three dots become one ellipsis character.
+  const QUOTES = {
+    en: { dOpen: '\u201c', dClose: '\u201d', sOpen: '\u2018' },
+    es: { dOpen: '\u00ab', dClose: '\u00bb', sOpen: '\u201c' }, // Spanish and Catalan: guillemets, then curly quotes inside
+    de: { dOpen: '\u201e', dClose: '\u201c', sOpen: '\u201a' },
+  };
+  function textBeforeCaret() {
+    const sel = getSelection();
+    const b = currentBlock();
+    if (!sel.rangeCount || !b) return '';
+    const r = sel.getRangeAt(0), rr = document.createRange();
+    rr.selectNodeContents(b); rr.setEnd(r.startContainer, r.startOffset);
+    return rr.toString();
+  }
+  function smartInsert(e) {
+    const q = QUOTES[prefs.smartQuotes];
+    if (!q || reading || e.isComposing || e.inputType !== 'insertText') return false;
+    if (e.data === '"' || e.data === "'") {
+      const before = textBeforeCaret();
+      const opening = before === '' || /[\s([{*_\u2014\u2013\-\/\u00ab\u201c\u2018\u201e\u201a\u00bf\u00a1]$/.test(before);
+      const ch = e.data === '"' ? (opening ? q.dOpen : q.dClose) : (opening ? q.sOpen : '\u2019'); // after a letter a single quote is an apostrophe
+      e.preventDefault(); document.execCommand('insertText', false, ch);
+      return true;
+    }
+    if (e.data === '.' && /\.\.$/.test(textBeforeCaret()) && getSelection().isCollapsed) {
+      e.preventDefault();
+      const sel = getSelection(); sel.modify('extend', 'backward', 'character'); sel.modify('extend', 'backward', 'character');
+      document.execCommand('insertText', false, '\u2026');
+      return true;
+    }
+    return false;
+  }
   editor.addEventListener('beforeinput', (e) => {
+    if (smartInsert(e)) return;
     if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') { e.preventDefault(); undoRedo(e.inputType === 'historyUndo' ? -1 : 1); return; }
     if (/^(insertFromPaste|insertFromDrop|deleteByCut|insertParagraph|insertLineBreak|deleteByDrag)$/.test(e.inputType)) commitHistory();
   });
@@ -1946,6 +2086,9 @@
     b.addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
     b.addEventListener('click', () => command(b.dataset.cmd));
   });
+  $('#exportNotes').addEventListener('change', (e) => savePrefs({ notesMode: e.target.value }));
+  $('#exportPage').addEventListener('change', (e) => { savePrefs({ pageSize: e.target.value }); fillExportSelects(); });
+  $('#exportMargins').addEventListener('change', (e) => savePrefs({ margins: e.target.value }));
   $$('#exportMenu [data-format]').forEach((b) => b.addEventListener('click', () => doExport(b.dataset.format)));
   $('#noteSave').addEventListener('click', () => closeNotePop(true));
   $('#noteDelete').addEventListener('click', deleteNote);
@@ -1964,6 +2107,7 @@
     const k = el.dataset.pref;
     if (el.classList.contains('seg') || el.classList.contains('swatches')) el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) savePrefs({ [k]: b.dataset.v }); });
     else if (el.type === 'checkbox') el.addEventListener('change', () => savePrefs({ [k]: el.checked }));
+    else if (el.tagName === 'SELECT') el.addEventListener('change', () => savePrefs({ [k]: el.value }));
     else if (el.type === 'range') {
       el.addEventListener('input', () => savePrefs({ [k]: +el.value }));
       const panel = $('#settings'), row = el.closest('.row');
@@ -1994,7 +2138,7 @@
     el.addEventListener('focus', () => el.select());
   });
   $$('[data-reset]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.reset; savePrefs({ [k]: DEFAULTS[k] }); }));
-  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'richPaste', 'weight', 'size', 'measure', 'lineHeight', 'paraGap', 'indent', 'headBefore', 'headAfter', 'quoteGap', 'anchor', 'typewriter', 'centerMode', 'focus', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'showSession', 'autoUpdate'];
+  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'richPaste', 'weight', 'size', 'measure', 'lineHeight', 'paraGap', 'indent', 'headBefore', 'headAfter', 'quoteGap', 'anchor', 'typewriter', 'centerMode', 'focus', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'showSession', 'autoUpdate', 'smartQuotes'];
   $('#resetAll').addEventListener('click', () => {
     const patch = {};
     RESETTABLE.forEach((k) => { if (DEFAULTS[k] !== undefined) patch[k] = DEFAULTS[k]; });
@@ -2029,5 +2173,5 @@
   kick(true);
 
   // exposed for tests
-  window.__app = { openResult, savePrefs, get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
+  window.__app = { openCompare, openResult, savePrefs, get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
 })();

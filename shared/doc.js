@@ -36,6 +36,8 @@
   }
   const countDoc = (doc) => doc.chapters.reduce((s, c) => s + countWords(c.blocks), 0);
 
+  // A scene break is an ordinary paragraph that holds only * * * : older versions of the app still show it, and it exports centered.
+  const isBreak = (b) => b.t === 'p' && /^\s*(\*\s*){3}$/.test(blockText(b));
   const sameFmt = (a, b) => !!a.b === !!b.b && !!a.i === !!b.i && !!a.u === !!b.u && (a.n || '') === (b.n || '');
   function normalizeRuns(runs) {
     const out = [];
@@ -95,6 +97,7 @@
       }
       const ch = { id, title: str(c.title), blocks: blocks.length ? blocks : [{ t: 'p', runs: [] }] };
       if (c.nonum) ch.nonum = true; // this chapter's page numbers are not shown (the pages are still counted)
+      if (Number.isInteger(c.goal) && c.goal > 0 && c.goal <= 2000000) ch.goal = c.goal; // this chapter's word target
       out.chapters.push(ch);
     }
     if (!out.chapters.length) out.chapters = [newChapter()];
@@ -108,6 +111,7 @@
   }
   function parseDraft(text) {
     let doc;
+    if (typeof text === 'string' && text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // Notepad and PowerShell can add a byte-order mark
     try { doc = JSON.parse(text); } catch (e) { throw new Error('This file is damaged or is not a .draft document.'); }
     return validate(doc);
   }
@@ -117,7 +121,7 @@
     for (const k of ['subtitle', 'author', 'extra']) if (doc[k]) head[k] = doc[k];
     const chapters = doc.chapters.map((c) => {
       const blocks = c.blocks.map((b) => '    ' + JSON.stringify({ t: b.t, runs: normalizeRuns(b.runs) })).join(',\n');
-      return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + (c.nonum ? ', "nonum": true' : '') + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
+      return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + (c.nonum ? ', "nonum": true' : '') + (c.goal > 0 ? ', "goal": ' + (c.goal | 0) : '') + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
     });
     const used = usedNoteIds(doc);
     const notes = {};
@@ -209,6 +213,7 @@
     doc.chapters.forEach((c) => {
       if (plan.chapterHeadings) out.push('# ' + escMd(c.title.trim() || 'Untitled chapter'));
       for (const b of c.blocks) {
+        if (isBreak(b)) { out.push('* * *'); continue; }
         const body = inlineMd(b.runs, opts.notes ? marker : null);
         if (!body.trim()) continue;
         const lvl = blockLevel(b, plan.shift);
@@ -279,6 +284,7 @@
     for (const line of lines) {
       let m;
       if (!line.trim()) { flushPara(); continue; }
+      if (/^\s*((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/.test(line)) { flushPara(); blocks.push({ t: 'p', runs: [{ text: '* * *' }] }); continue; } // a horizontal rule is a scene break
       if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
         flushPara();
         blocks.push({ t: m[1].length === 1 ? 'h1' : 'h2', runs: parseInlineMd(m[2]) });
@@ -302,7 +308,7 @@
   }
 
   return {
-    FORMAT, VERSION, slugify, uid, now, newDoc, newChapter, blockText, isCite, countWords, countDoc, normalizeRuns, validate,
+    FORMAT, VERSION, slugify, uid, now, newDoc, newChapter, blockText, isCite, countWords, countDoc, normalizeRuns, isBreak, validate,
     parseDraft, serializeDraft, usedNoteIds, orderedNotes, headingPlan, forExport, blockLevel,
     toMarkdown, toPlainText, fromMarkdown, parseInlineMd,
   };

@@ -6,3 +6,6 @@ dist/
 to_delete/
 scratch/
 Claude outputs/
+
+# local notes
+DEVELOPER-GUIDE.md

@@ -21,7 +21,7 @@ Both `npm test` and the end-to-end tests run on every push and pull request (`.g
 
 ## Release a new version
 
-1. Change `version` in `package.json` (for example `1.0.1`), commit and push to `main`.
+1. Change `version` in `package.json` (for example `1.0.1`), commit and push to `main`. The tag in step 2 must be the same number with a `v` in front; the tests fail early with a clear message if it is not.
 2. Tag and push the tag:
 
 ```

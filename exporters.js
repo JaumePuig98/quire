@@ -5,11 +5,24 @@ const { pathToFileURL } = require('url');
 const D = require('./shared/doc.js');
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
-  Footer, PageNumber, CommentRangeStart, CommentRangeEnd, CommentReference,
+  Footer, PageNumber, CommentRangeStart, CommentRangeEnd, CommentReference, FootnoteReferenceRun,
 } = require('docx');
 
-const A4 = { width: 11906, height: 16838 };
-const MARGIN = 1418; // 2.5 cm
+// Page sizes in millimetres, and the margin choices. Letter is the usual size in Canada and the US, A4 elsewhere.
+const PAGES = {
+  letter: { name: 'US Letter', w: 215.9, h: 279.4 },
+  a4: { name: 'A4', w: 210, h: 297 },
+  a5: { name: 'A5', w: 148, h: 210 },
+  trade: { name: 'Trade paperback 6 x 9 in', w: 152.4, h: 228.6 },
+  digest: { name: 'Digest 5.5 x 8.5 in', w: 139.7, h: 215.9 },
+};
+const MARGINS = { narrow: { name: 'Narrow', mm: 15 }, normal: { name: 'Normal', mm: 25 }, wide: { name: 'Wide', mm: 32 } };
+const twips = (mm) => Math.round((mm / 25.4) * 1440);
+function pageGeometry(opts) {
+  const pg = PAGES[opts && opts.pageSize] || PAGES.a4;
+  const mg = MARGINS[opts && opts.margins] || MARGINS.normal;
+  return { pg, mm: mg.mm, size: { width: twips(pg.w), height: twips(pg.h) }, margin: twips(mg.mm) };
+}
 
 const FONTS = {
   serif: { word: 'Literata', embed: 'literata', css: "'Literata', Georgia, serif" },
@@ -24,13 +37,17 @@ async function toDocx(doc, opts) {
   const font = (FONTS[opts.font] || FONTS.serif).word;
   const plan = D.headingPlan(doc);
   const notes = opts.notes ? D.orderedNotes(doc) : [];
+  const asFoot = !!(opts.notes && opts.notesMode === 'footnotes'); // real Word footnotes instead of comments
+  const geo = pageGeometry(opts);
   const commentId = {};
-  notes.forEach((n, k) => (commentId[n.id] = k));
+  const footNum = {};
+  notes.forEach((n, k) => { commentId[n.id] = k; footNum[n.id] = n.num; });
   const started = new Set();
   const ended = new Set();
+  const footDone = new Set();
 
   const comments = {
-    children: notes.map((n, k) => ({
+    children: (asFoot ? [] : notes).map((n, k) => ({
       id: k,
       author: opts.author || 'Author',
       date: new Date(),
@@ -45,7 +62,7 @@ async function toDocx(doc, opts) {
     const out = [];
     runs.forEach((r, k) => {
       const nx = runs[k + 1];
-      const id = r.n && commentId[r.n] !== undefined ? commentId[r.n] : null;
+      const id = !asFoot && r.n && commentId[r.n] !== undefined ? commentId[r.n] : null;
       if (id !== null && !started.has(r.n)) { started.add(r.n); out.push(new CommentRangeStart(id)); }
       const lines = r.text.split('\n');
       lines.forEach((line, li) => {
@@ -54,6 +71,7 @@ async function toDocx(doc, opts) {
           break: li > 0 ? 1 : undefined,
         }));
       });
+      if (asFoot && r.n && footNum[r.n] && !footDone.has(r.n) && (!nx || nx.n !== r.n)) { footDone.add(r.n); out.push(new FootnoteReferenceRun(footNum[r.n])); }
       if (id !== null && started.has(r.n) && !ended.has(r.n) && (!nx || nx.n !== r.n)) {
         ended.add(r.n);
         out.push(new CommentRangeEnd(id));
@@ -68,7 +86,7 @@ async function toDocx(doc, opts) {
   const titleKids = [];
   const titlePage = !!(opts.titlePage && (doc.title || '').trim());
   if (titlePage) {
-    titleKids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 4200, after: 360 }, children: [new TextRun({ text: doc.title.trim(), bold: true, size: 60 })] }));
+    titleKids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: Math.round(geo.size.height * 0.25), after: 360 }, children: [new TextRun({ text: doc.title.trim(), bold: true, size: 60 })] }));
     if (doc.subtitle) titleKids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 360 }, children: [new TextRun({ text: doc.subtitle.trim(), italics: true, size: 34 })] }));
     if (opts.author) titleKids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [new TextRun({ text: opts.author, size: 28 })] }));
     if (doc.extra) titleKids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 240 }, children: [new TextRun({ text: doc.extra.trim(), size: 22, color: '555555' })] }));
@@ -80,14 +98,15 @@ async function toDocx(doc, opts) {
     for (const b of c.blocks) {
       if (!D.blockText(b).trim()) continue;
       const lvl = D.blockLevel(b, plan.shift);
-      if (lvl) kids.push(new Paragraph({ heading: heading(lvl), children: runsFor(b) }));
+      if (D.isBreak(b)) kids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 240, after: 240 }, keepNext: true, children: [new TextRun({ text: '*   *   *' })] }));
+      else if (lvl) kids.push(new Paragraph({ heading: heading(lvl), children: runsFor(b) }));
       else if (b.t === 'quote') kids.push(new Paragraph({ style: 'Quote', alignment: AlignmentType.RIGHT, children: runsFor(b) }));
       else kids.push(new Paragraph({ alignment: opts.justify === false ? undefined : AlignmentType.JUSTIFIED, children: runsFor(b) }));
     }
     bodySections.push({ show: opts.pageNumbers !== false && !c.nonum, kids: kids.length ? kids : [new Paragraph({ children: [] })] });
   });
   const footerFor = (show) => new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: show ? [new TextRun({ children: [PageNumber.CURRENT], size: 18, color: '666666' })] : [] })] });
-  const pageProps = (extra) => ({ page: Object.assign({ size: A4, margin: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } }, extra || {}) });
+  const pageProps = (extra) => ({ page: Object.assign({ size: geo.size, margin: { top: geo.margin, bottom: geo.margin, left: geo.margin, right: geo.margin } }, extra || {}) });
   const sections = [];
   if (titlePage) sections.push({ properties: pageProps(), footers: { default: footerFor(false) }, children: titleKids });
   bodySections.forEach((sec, i) => sections.push({
@@ -116,7 +135,8 @@ async function toDocx(doc, opts) {
     fonts: embedded,
     creator: opts.author || 'Author',
     title: doc.title || '',
-    comments: notes.length ? comments : undefined,
+    comments: notes.length && !asFoot ? comments : undefined,
+    footnotes: asFoot && notes.length ? Object.fromEntries(notes.map((n) => [n.num, { children: n.text.split(/\n+/).map((line) => new Paragraph({ children: [new TextRun(line)] })) }])) : undefined,
     styles: {
       default: {
         document: { run: { font, size: 24 }, paragraph: { spacing: { line: 336, after: 160 }, widowControl: true } },
@@ -147,9 +167,13 @@ function toHtml(doc, opts) {
   const f = FONTS[opts.font] || FONTS.serif;
   const plan = D.headingPlan(doc);
   const notes = opts.notes ? D.orderedNotes(doc) : [];
+  const perChapter = !!(opts.notes && opts.notesMode === 'footnotes'); // notes at the end of each chapter instead of one list at the end
+  const geo = pageGeometry(opts);
   const num = {};
-  notes.forEach((n) => (num[n.id] = n.num));
+  const noteText = {};
+  notes.forEach((n) => { num[n.id] = n.num; noteText[n.id] = n.text; });
   const emitted = new Set();
+  let chapNotes = [];
 
   function inline(block) {
     const runs = D.normalizeRuns(block.runs);
@@ -161,7 +185,7 @@ function toHtml(doc, opts) {
       if (r.b) t = '<b>' + t + '</b>';
       h += t;
       const nx = runs[k + 1];
-      if (r.n && num[r.n] && !emitted.has(r.n) && (!nx || nx.n !== r.n)) { emitted.add(r.n); h += '<sup class="nref">' + num[r.n] + '</sup>'; }
+      if (r.n && num[r.n] && !emitted.has(r.n) && (!nx || nx.n !== r.n)) { emitted.add(r.n); chapNotes.push(r.n); h += '<sup class="nref">' + num[r.n] + '</sup>'; }
     });
     return h;
   }
@@ -172,18 +196,21 @@ function toHtml(doc, opts) {
   if (titlePage && part !== 'body') body += '<section class="titlepage"><h1 class="booktitle">' + esc(doc.title.trim()) + '</h1>' + (doc.subtitle ? '<p class="subtitle">' + esc(doc.subtitle.trim()) + '</p>' : '') + (opts.author ? '<p class="byline">' + esc(opts.author) + '</p>' : '') + (doc.extra ? '<p class="extra">' + esc(doc.extra.trim()) + '</p>' : '') + '</section>';
   doc.chapters.forEach((c, ci) => {
     if (part === 'title') return;
+    chapNotes = [];
     body += '<section class="chapter' + (ci > 0 ? ' newpage' : '') + (opts.pageNumbers === false || c.nonum ? ' nonum' : '') + '">';
     if (plan.chapterHeadings) body += '<h1>' + esc(c.title.trim() || 'Untitled chapter') + '</h1>';
     for (const b of c.blocks) {
       if (!D.blockText(b).trim()) continue;
       const lvl = D.blockLevel(b, plan.shift);
-      if (lvl) body += '<h' + Math.min(lvl, 3) + '>' + inline(b) + '</h' + Math.min(lvl, 3) + '>';
+      if (D.isBreak(b)) body += '<p class="sb">*&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;&nbsp;*</p>';
+      else if (lvl) body += '<h' + Math.min(lvl, 3) + '>' + inline(b) + '</h' + Math.min(lvl, 3) + '>';
       else if (b.t === 'quote') body += '<blockquote' + (D.isCite(b) ? ' class="cite"' : '') + '>' + inline(b) + '</blockquote>';
       else body += '<p>' + inline(b) + '</p>';
     }
+    if (perChapter && chapNotes.length) body += '<div class="endnotes"><h2>Notes</h2><ol>' + chapNotes.map((id) => '<li value="' + num[id] + '">' + esc(noteText[id]) + '</li>').join('') + '</ol></div>';
     body += '</section>';
   });
-  if (notes.length && part !== 'title') {
+  if (notes.length && part !== 'title' && !perChapter) {
     body += '<section class="chapter newpage notes"><h2>Notes</h2><ol>' +
       notes.map((n) => '<li>' + esc(n.text) + '</li>').join('') + '</ol></section>';
   }
@@ -203,7 +230,7 @@ function toHtml(doc, opts) {
     face2('Courier Prime', 'courier-prime-latin-700-normal.woff2', 700, 'normal') + face2('Courier Prime', 'courier-prime-latin-700-italic.woff2', 700, 'italic');
 
   return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(doc.title || 'Document') + '</title><style>\n' + fontCss +
-    (opts.pageNumbers === false || part === 'title' ? '@page{size:A4;margin:25mm}\n' : '@page{size:A4;margin:25mm;@bottom-center{content:counter(page);font:9pt Arial,sans-serif;color:#666}}\n') +
+    (opts.pageNumbers === false || part === 'title' ? '@page{size:' + geo.pg.w + 'mm ' + geo.pg.h + 'mm;margin:' + geo.mm + 'mm}\n' : '@page{size:' + geo.pg.w + 'mm ' + geo.pg.h + 'mm;margin:' + geo.mm + 'mm;@bottom-center{content:counter(page);font:9pt Arial,sans-serif;color:#666}}\n') +
     '@page nonum{@bottom-center{content:none}}\n.nonum{page:nonum}\n' +
     'html{font-family:' + f.css + ';font-size:11.5pt;line-height:1.55;color:#111}\n' +
     'body{margin:0;orphans:3;widows:3;hyphens:manual}\n' +
@@ -213,14 +240,16 @@ function toHtml(doc, opts) {
     'h2{font-size:15pt;margin:1.5em 0 .5em}\n' +
     'h3{font-size:12.5pt;margin:1.3em 0 .4em}\n' +
     'h1+*,h2+*,h3+*{break-before:avoid}\n' +
+    'p.sb{text-align:center;margin:1.1em 0;break-after:avoid;page-break-after:avoid}\n' +
     'blockquote{margin:0 0 .2em 38%;padding:0;font-size:.92em;font-style:italic;text-align:right;break-inside:avoid;page-break-inside:avoid}\n' +
     'blockquote.cite{font-style:normal;text-align:right}\n' +
     ':not(blockquote)+blockquote,blockquote+:not(blockquote){margin-top:1em}\n' +
-    '.titlepage{display:flex;flex-direction:column;justify-content:center;height:240mm;text-align:center}\n' +
+    '.titlepage{display:flex;flex-direction:column;justify-content:center;height:' + (geo.pg.h - 2 * geo.mm - 4) + 'mm;text-align:center}\n' +
     '  .booktitle{font-size:32pt;margin:0 0 .4em}.subtitle{font-size:17pt;font-style:italic;text-align:center;margin:0 0 2.2em}.byline{font-size:14pt;text-align:center;margin:0 0 .8em}.extra{font-size:11pt;color:#555;text-align:center}\n' +
     '.newpage{break-before:page;page-break-before:always}\n' +
     '.nref{font-size:.7em;line-height:0;color:#555}\n' +
     '.notes ol{padding-left:1.4em}.notes li{margin:0 0 .5em;break-inside:avoid}\n' +
+    '.endnotes{margin-top:2.2em;padding-top:.6em;border-top:.5pt solid #999;font-size:.88em;break-inside:avoid}.endnotes h2{font-size:1em;margin:0 0 .4em}.endnotes ol{padding-left:1.4em;margin:0}.endnotes li{margin:0 0 .35em}\n' +
     '</style></head><body>' + body + '</body></html>';
 }
 
@@ -256,4 +285,4 @@ async function renderPdf(doc, opts, fontsDir) {
   } finally { pw.destroy(); }
 }
 
-module.exports = { toDocx, toHtml, renderPdf, FONTS };
+module.exports = { toDocx, toHtml, renderPdf, FONTS, PAGES, MARGINS, pageGeometry };

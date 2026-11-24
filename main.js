@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const D = require('./shared/doc.js');
 const X = require('./exporters.js');
+const { toEpub } = require('./epub.js');
 
 const isDev = process.argv.includes('--dev');
 const FILE_EXTS = ['.draft', '.md', '.markdown', '.txt'];
@@ -26,6 +27,9 @@ const DEFAULT_PREFS = {
   readScope: 'chapter', centerMode: 'strict', justify: true, fmtbar: true, bookGoal: 0, autoUpdate: true, // text slides sideways so the caret stays in the middle
   accent: 'amber', titlePage: null, // null = not chosen yet, the title page is ticked
   showSession: false, richPaste: true, pageNumbers: true, focus: 'off', streak: { last: '', count: 0, best: 0 },
+  pageSize: null, margins: 'normal', // export page: null = Letter in Canada and the US, A4 elsewhere
+  notesMode: 'comments', // export notes: off | comments | footnotes
+  smartQuotes: 'off', // off | en | es | de: curly quotes and a proper ellipsis while typing
   recent: [],
   lastPath: null,
 };
@@ -37,10 +41,19 @@ function loadPrefs() {
 function savePrefs() {
   try { fs.mkdirSync(app.getPath('userData'), { recursive: true }); atomicWrite(userFile('settings.json'), JSON.stringify(prefs, null, 2)); } catch (e) { /* ignore */ }
 }
+const sleepMs = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch (e) { /* no wait available */ } };
+// Write next to the target, then swap in. On Windows the swap can fail for a moment while OneDrive, Dropbox or an antivirus
+// has the file open, so it is retried briefly, and the temporary file never stays behind.
 function atomicWrite(file, data) {
   const tmp = file + '.tmp-' + process.pid;
   fs.writeFileSync(tmp, data);
-  fs.renameSync(tmp, file);
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, file); return; } catch (e) {
+      if (i < 5 && ['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) { sleepMs(60 * (i + 1)); continue; }
+      try { fs.unlinkSync(tmp); } catch (e2) { /* already gone */ }
+      throw e;
+    }
+  }
 }
 const isDark = () => (prefs.theme === 'system' ? nativeTheme.shouldUseDarkColors : prefs.theme === 'dark');
 const BG = { light: '#F4F1EA', dark: '#181715' };
@@ -94,6 +107,21 @@ function setupUpdates() {
   } catch (err) { updLog('setup failed ' + err); }
 }
 ipcMain.handle('app:info', () => ({ version: app.getVersion(), kind: installKind(), update: updateState }));
+// What to paste into a bug report: versions, system and the update log. No file names or document text.
+ipcMain.handle('app:diagnostics', () => {
+  let log = '';
+  try { log = fs.readFileSync(userFile('updater.log'), 'utf8').trim().split('\n').slice(-25).join('\n'); } catch (e) { log = '(no update log yet)'; }
+  const text = [
+    'Quire ' + app.getVersion() + ' (' + installKind() + ')',
+    'Electron ' + process.versions.electron + ', Chrome ' + process.versions.chrome + ', Node ' + process.versions.node,
+    'System ' + os.type() + ' ' + os.release() + ' ' + process.arch + ', language ' + app.getLocale(),
+    'Update state: ' + JSON.stringify(updateState),
+    'Automatic updates: ' + (prefs.autoUpdate === false ? 'off' : 'on'),
+    '', 'Update log (last lines):', log,
+  ].join('\n');
+  require('electron').clipboard.writeText(text);
+  return text.length;
+});
 ipcMain.handle('update:check', async () => {
   if (!updater) return { status: 'unsupported', kind: installKind() };
   if (updateState.status === 'checking' || updateState.status === 'downloading' || updateState.status === 'ready') return updateState;
@@ -202,9 +230,14 @@ function fileFromArgv(argv) {
 // What we last read from or wrote to each file: if the file on disk differs (git, OneDrive, Dropbox...), we never overwrite it blindly.
 const known = new Map();
 const hashOf = (t) => require('crypto').createHash('sha1').update(t).digest('hex');
-const diskChanged = (p) => { if (!known.has(p)) return false; try { return hashOf(fs.readFileSync(p, 'utf8')) !== known.get(p); } catch (e) { return false; } };
+const noBom = (t) => (t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t);
+const diskChanged = (p) => { if (!known.has(p)) return false; try { return hashOf(noBom(fs.readFileSync(p, 'utf8'))) !== known.get(p); } catch (e) { return false; } };
 function readDoc(p) {
-  try { const text = fs.readFileSync(p, 'utf8'); known.set(p, hashOf(text)); return { path: p, text }; } catch (e) { return { path: p, error: 'Could not open ' + path.basename(p) + ': ' + e.message }; }
+  try {
+    if (fs.statSync(p).size > 50 * 1024 * 1024) return { path: p, error: path.basename(p) + ' is too large to open (over 50 MB).' };
+    const text = noBom(fs.readFileSync(p, 'utf8'));
+    known.set(p, hashOf(text)); return { path: p, text };
+  } catch (e) { return { path: p, error: 'Could not open ' + path.basename(p) + ': ' + e.message }; }
 }
 function addRecent(p) {
   prefs.lastPath = p;
@@ -380,9 +413,9 @@ ipcMain.on('recovery:save', (e, text) => { try { fs.mkdirSync(app.getPath('userD
 ipcMain.on('recovery:clear', () => fs.unlink(recoveryFile(), () => {}));
 
 ipcMain.handle('doc:export', async (e, { format, doc, opts, suggested, path: chosen }) => {
-  const ext = { md: 'md', txt: 'txt', docx: 'docx', pdf: 'pdf' }[format];
+  const ext = { md: 'md', txt: 'txt', docx: 'docx', pdf: 'pdf', epub: 'epub' }[format];
   if (!ext) return { error: 'Unknown format' };
-  const label = { md: 'Markdown', txt: 'Plain text', docx: 'Word document', pdf: 'PDF' }[format];
+  const label = { md: 'Markdown', txt: 'Plain text', docx: 'Word document', pdf: 'PDF', epub: 'EPUB e-book' }[format];
   let r;
   if (chosen) r = { filePath: chosen.toLowerCase().endsWith('.' + ext) ? chosen : chosen + '.' + ext };
   else {
@@ -398,6 +431,7 @@ ipcMain.handle('doc:export', async (e, { format, doc, opts, suggested, path: cho
     let data;
     if (format === 'md') data = D.toMarkdown(doc, opts);
     else if (format === 'txt') data = D.toPlainText(doc, opts);
+    else if (format === 'epub') data = toEpub(doc, opts);
     else if (format === 'docx') data = await X.toDocx(doc, Object.assign({}, opts, { embedDir: path.join(__dirname, 'exporter-fonts') }));
     else data = await X.renderPdf(doc, opts, path.join(__dirname, 'renderer', 'fonts'));
     fs.writeFileSync(r.filePath, data);

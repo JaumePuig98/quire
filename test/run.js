@@ -130,10 +130,72 @@ const X = require('../exporters.js');
   fs.writeFileSync(path.join(os.tmpdir(), 'wa-test.html'), html);
   console.log('ok html');
 
+  // a file saved with a byte-order mark (Notepad, PowerShell) still opens
+  assert.doesNotThrow(() => D.parseDraft('\uFEFF' + D.serializeDraft(D.newDoc())), 'a draft with a BOM opens');
+  console.log('ok bom');
+
+  // a release tag must match package.json, or the release step cannot find the files (only checked on GitHub, for tags)
+  if (process.env.GITHUB_REF_TYPE === 'tag') {
+    const v = require('../package.json').version;
+    assert.strictEqual(process.env.GITHUB_REF_NAME, 'v' + v, 'the tag ' + process.env.GITHUB_REF_NAME + ' must match package.json version ' + v + ' (use tag v' + v + ', or change the version)');
+    console.log('ok tag matches version');
+  }
+
+
+  // ---- 1.2 features: scene break, goals, diff, page size, footnotes, epub, require/files ----
+  {
+    const E = require('../exporters.js');
+    const DD = require('../shared/diff.js');
+    const P = (t) => ({ t: 'p', runs: [{ text: t }] });
+    assert(D.isBreak(P('* * *')) && D.isBreak(P('***')) && !D.isBreak(P('* * * *')) && !D.isBreak(P('a * * *')), 'isBreak');
+    const sd = { id: 'x1', title: 'T', subtitle: '', author: 'A', extra: '', created: '2026-01-01T00:00:00.000Z', modified: '2026-01-01T00:00:00.000Z', notes: {}, chapters: [{ id: 'c1', title: 'One', goal: 1500, blocks: [P('Up'), P('* * *'), P('Down')] }] };
+    const md = D.toMarkdown(sd, {});
+    assert(md.includes('\n* * *\n'), 'markdown scene break');
+    const back = D.fromMarkdown('Up\n\n---\n\nDown\n');
+    assert(back.chapters[0].blocks.map((b) => D.blockText(b)).join('|') === 'Up|* * *|Down', 'a horizontal rule imports as a scene break');
+    const rt = D.parseDraft(D.serializeDraft(sd));
+    assert.strictEqual(rt.chapters[0].goal, 1500, 'chapter goal survives save and open');
+    assert(!('goal' in D.parseDraft(D.serializeDraft(Object.assign({}, sd, { chapters: [Object.assign({}, sd.chapters[0], { goal: 0 })] }))).chapters[0]) || !D.parseDraft(D.serializeDraft(Object.assign({}, sd, { chapters: [Object.assign({}, sd.chapters[0], { goal: 0 })] }))).chapters[0].goal, 'no goal when zero');
+    // diff
+    const old = { chapters: [{ title: 'One', blocks: [P('The quick brown fox jumps'), P('Gone paragraph here entirely'), P('Same')] }] };
+    const cur = { chapters: [{ title: 'One', blocks: [P('The quick red fox jumps'), P('Same'), P('Brand new ending')] }] };
+    const r = DD.compare(old, cur);
+    assert.strictEqual(r.changed, 1, 'one edited paragraph'); assert.strictEqual(r.removed, 1); assert.strictEqual(r.added, 1);
+    const chg = r.rows.find((x) => x.kind === 'chg');
+    assert(chg.parts.some((p) => p.op === 'del' && p.text.trim() === 'brown') && chg.parts.some((p) => p.op === 'add' && p.text.trim() === 'red'), 'word level diff');
+    assert.strictEqual(DD.compare(cur, cur).rows.every((x) => x.kind === 'same'), true, 'identical texts have no differences');
+    // page size and margins
+    const g = E.pageGeometry({ pageSize: 'a5', margins: 'narrow' });
+    assert(g && g.size.width < E.pageGeometry({ pageSize: 'a4', margins: 'narrow' }).size.width, 'A5 is narrower than A4');
+    const html = E.toHtml(sd, { pageSize: 'a5', margins: 'wide', font: 'serif', notes: false });
+    assert(/@page\{size:148mm 210mm/.test(html), 'html @page uses the chosen page size');
+    assert(html.includes('class="sb"'), 'scene break in html');
+    // footnotes in docx
+    const nd = Object.assign({}, sd, { notes: { n1: { text: 'A footnote text', created: '2026-01-01T00:00:00.000Z' } }, chapters: [{ id: 'c1', title: 'One', blocks: [{ t: 'p', runs: [{ text: 'See this', n: 'n1' }, { text: ' and go' }] }] }] });
+    const buf = await E.toDocx(nd, { notes: true, notesMode: 'footnotes', pageSize: 'a5' });
+    const zip = require('child_process').execFileSync('python3', ['-I', '-c', 'import sys,zipfile,io;z=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read()));print("\\n".join(z.namelist()));print(z.read("word/footnotes.xml").decode() if "word/footnotes.xml" in z.namelist() else "");print(z.read("word/document.xml").decode())'], { input: buf, maxBuffer: 1 << 26 }).toString();
+    assert(zip.includes('word/footnotes.xml') && zip.includes('A footnote text') && zip.includes('w:footnoteReference'), 'docx has a real footnote');
+    assert(/w:pgSz[^>]*w:w="8391"/.test(zip) || /w:pgSz[^>]*w:w="8\d\d\d"/.test(zip), 'docx page width is A5 (' + (zip.match(/<w:pgSz[^>]*>/) || [''])[0] + ')');
+    // epub
+    const { toEpub } = require('../epub.js');
+    const eb = toEpub(sd, { lang: 'en' });
+    assert(Buffer.isBuffer(eb) && eb.slice(0, 2).toString() === 'PK', 'epub is a zip');
+    assert.strictEqual(eb.slice(30, 38).toString(), 'mimetype', 'mimetype is the first entry');
+    assert(eb.slice(38, 38 + 20).toString() === 'application/epub+zip', 'mimetype is stored, not compressed');
+    // every local file main.js needs at runtime must ship in the installer
+    const pkg = require('../package.json'), files = (pkg.build && pkg.build.files) || [];
+    for (const f of ['main.js', 'exporters.js', 'epub.js']) {
+      for (const m of fs.readFileSync(path.join(__dirname, '..', f), 'utf8').matchAll(/require\('\.\/([\w.-]+?)(?:\.js)?'\)/g)) {
+        assert(files.includes(m[1] + '.js') || files.some((x) => x.endsWith('/**') || x === '**/*'), f + ' requires ./' + m[1] + '.js which must be in build.files');
+      }
+    }
+    console.log('ok 1.2 features');
+  }
+
   // every setting the app saves must really be in DEFAULT_PREFS (a stray // once swallowed five of them)
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   const block = mainSrc.slice(mainSrc.indexOf('const DEFAULT_PREFS = {'), mainSrc.indexOf('\n};', mainSrc.indexOf('const DEFAULT_PREFS = {')));
-  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal']) {
+  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal', 'pageSize', 'margins', 'notesMode', 'smartQuotes']) {
     const line = block.split('\n').find((l) => new RegExp('(^|[ ,{])' + key + ':').test(l));
     assert(line, 'DEFAULT_PREFS has ' + key);
     assert(!/\/\/.*\b/.test(line.slice(0, line.search(new RegExp('(^|[ ,{])' + key + ':')) + 1)), key + ' is not inside a comment');

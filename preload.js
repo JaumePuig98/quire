@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('api', {
   close: () => ipcRenderer.send('win:close'),
   closeNow: () => ipcRenderer.send('win:close-now'),
   showInFolder: (p) => ipcRenderer.send('shell:show', p),
+  diagnostics: () => ipcRenderer.invoke('app:diagnostics'),
   appInfo: () => ipcRenderer.invoke('app:info'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateInstall: () => ipcRenderer.invoke('update:install'),

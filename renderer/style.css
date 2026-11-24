@@ -171,6 +171,9 @@ body.typing #status,body.typing #saveState{opacity:.55}
   #topbar button{padding:0 7px}
 }
 .popover h2{margin:0 0 10px;font-size:14px}
+#exportMenu .xrow{display:flex;align-items:center;gap:8px;padding:3px 8px;font-size:12.5px}
+#exportMenu .xrow label{width:58px;color:rgb(var(--muted))}
+#exportMenu .xrow select{flex:1;max-width:none;height:28px}
 #exportMenu button{width:100%;justify-content:space-between;height:34px;padding:0 10px}
 .check{display:flex;align-items:center;gap:8px;padding:7px 8px;font-size:12.5px;cursor:pointer}
 .check input{accent-color:rgb(var(--accent))}
@@ -208,6 +211,12 @@ button.primary .hint{color:inherit;opacity:.7}
 #chapterList .ch-top{display:flex;align-items:center;gap:4px;min-width:0}
 #chapterList .ch-tools{display:flex;align-items:center;gap:4px;padding-left:24px}
 #chapterList .wc{flex:1;font-size:11px;color:rgb(var(--muted));text-align:left}
+#chapterList .ch-tools button.wc{min-width:0;height:auto;padding:2px 0;border:0;background:none;font-size:11px;line-height:1.3;cursor:pointer}
+#chapterList .ch-tools button.wc:hover{color:rgb(var(--ink));text-decoration:underline}
+#chapterList .ch-goal{flex:1;min-width:0;width:100%;height:24px;font-size:12px}
+#chapterList .ch-bar{height:3px;margin:3px 4px 2px 24px;border-radius:2px;background:rgb(var(--ink)/.12);overflow:hidden}
+#chapterList .ch-bar i{display:block;height:100%;background:rgb(var(--accent))}
+#chapterList .ch-bar.done i{background:rgb(var(--ink)/.55)}
 #chapterList .ch-tools button{min-width:28px;font-size:14px;line-height:1}
 #chapterList button{height:24px;padding:0 5px;font-size:11.5px}
 button.wide{width:100%;justify-content:center;border:1px dashed rgb(var(--line));height:34px}
@@ -403,3 +412,18 @@ body.fmthidden #fmtToggle{font-size:0}
 
 .aboutline{margin:4px 0 6px;font-size:15px}
 #settings .st-pane a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+#editor p.sbreak{text-align:center;text-indent:0;letter-spacing:.4em;margin-top:1em;margin-bottom:1em}
+
+#cmpDlg{position:fixed;inset:0;z-index:11;background:rgb(0 0 0/.35);display:flex;align-items:center;justify-content:center}
+.modal-box.cmp{width:min(760px,92vw);max-height:84vh;display:flex;flex-direction:column}
+#cmpBody{flex:1;min-height:160px;overflow:auto;padding:10px 12px;margin:6px 0;border:1px solid rgb(var(--line));border-radius:8px;background:rgb(var(--bg));font:15px/1.55 var(--serif,Georgia,serif)}
+#cmpBody p{margin:0 0 .7em}
+#cmpBody .cmp-ch{font-weight:700;margin-top:1em}
+#cmpBody .cmp-same{color:rgb(var(--muted))}
+#cmpBody .cmp-gap{text-align:center;color:rgb(var(--muted));letter-spacing:.3em}
+#cmpBody ins{text-decoration:none;background:rgb(40 130 60/.2);color:inherit;border-bottom:2px solid rgb(40 130 60);border-radius:2px}
+#cmpBody del{background:rgb(190 50 50/.16);color:inherit;text-decoration:line-through;text-decoration-thickness:2px;border-radius:2px}
+@media (forced-colors:active){#cmpBody ins{border-bottom:2px solid LinkText}#cmpBody del{border:1px dashed CanvasText}}
+select:focus-visible,#cmpBody:focus-visible,#exportMenu select:focus-visible{outline:2px solid rgb(var(--accent));outline-offset:1px}
+@media (forced-colors:active){.ch-bar{border:1px solid CanvasText;background:Canvas}.ch-bar i{background:Highlight;forced-color-adjust:none}#editor p.sbreak{forced-color-adjust:auto}}
+#fmtbar button,#fmtbar .hint{flex:none;white-space:nowrap}
