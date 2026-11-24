@@ -17,7 +17,7 @@ const decode = (s) => s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, g) => {
 });
 
 // HTML from mammoth -> [{t, runs}]
-function htmlToBlocks(html) {
+function htmlToBlocks(html, keepLevels) {
   const blocks = [];
   let cur = null;
   let title = '';
@@ -44,7 +44,7 @@ function htmlToBlocks(html) {
       continue;
     }
     const closing = !!m[1], tag = m[2].toLowerCase(), attrs = m[3] || '';
-    if (/^h[1-6]$/.test(tag)) { closing ? close() : (close(), open(tag === 'h1' ? 'h1' : 'h2')); }
+    if (/^h[1-6]$/.test(tag)) { if (closing) close(); else { close(); open(tag === 'h1' ? 'h1' : 'h2'); if (keepLevels) cur.lvl = +tag[1]; } }
     else if (tag === 'p') {
       if (closing) close();
       else { close(); if (/doc-title/.test(attrs)) { inTitle = true; open('p'); } else open('p'); }
@@ -86,4 +86,12 @@ async function importDocx(file, name) {
   const { blocks, title } = htmlToBlocks(res.value);
   return toDoc(blocks, name, title);
 }
-module.exports = { importDocx, htmlToBlocks, toDoc };
+// The Word copy Quire keeps next to a book: paragraphs in order, headings with their Word level, nothing else.
+async function importRaw(file) {
+  const res = await mammoth.convertToHtml({ path: file }, {
+    styleMap: STYLE_MAP,
+    convertImage: mammoth.images.imgElement(() => Promise.resolve({ src: '' })),
+  });
+  return htmlToBlocks(res.value, true).blocks;
+}
+module.exports = { importDocx, importRaw, htmlToBlocks, toDoc };

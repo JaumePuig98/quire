@@ -200,10 +200,71 @@ const X = require('../exporters.js');
     console.log('ok 1.2 features');
   }
 
+
+  // ---- Word copy: export, edit "on the phone", import and merge back without losing notes, targets or page-number settings ----
+  {
+    const E = require('../exporters.js'), M = require('../shared/merge.js'), DD = require('../shared/diff.js');
+    const { importRaw } = require('../docx-import.js');
+    const os = require('os');
+    const tmpd = fs.mkdtempSync(path.join(os.tmpdir(), 'quire-merge-'));
+    const P = (...runs) => ({ t: 'p', runs: runs.map((r) => (typeof r === 'string' ? { text: r } : r)) });
+    const now = '2026-01-01T00:00:00.000Z';
+    const mk = () => ({ id: 'abc123', title: 'Book', subtitle: 'sub', author: 'A', extra: '', created: now, modified: now,
+      notes: { n1: { text: 'First note', created: now }, n2: { text: 'Second note', created: now } },
+      chapters: [
+        { id: 'c1', title: 'Prologue', nonum: true, blocks: [P('Plain & simple ', { text: 'bold', b: true }, { text: ' ital', i: true }, { text: ' noted', n: 'n1' })] },
+        { id: 'c2', title: 'Chapter two', goal: 500, blocks: [{ t: 'h1', runs: [{ text: 'Big heading' }] }, P('Before the break'), P('* * *'), P('After the break', { text: ' second note', n: 'n2' }), { t: 'quote', runs: [{ text: 'A quote' }] }, { t: 'quote', runs: [{ text: '\u2014 Someone' }] }, { t: 'h2', runs: [{ text: 'Small' }] }, P('Tail\nwith break')] },
+        { id: 'c3', title: '', blocks: [P('')] },
+        { id: 'c4', title: 'Last', blocks: [P('The end of the story, it was long.'), P('')] },
+      ] });
+    const through = async (edited, base) => { // Word copy of `edited`, imported and merged into `base`
+      const f = path.join(tmpd, 'c' + Math.random().toString(36).slice(2) + '.docx');
+      fs.writeFileSync(f, await E.toDocx(edited, { titlePage: false, notes: true, notesMode: 'comments', pageNumbers: true }));
+      const ex = D.forExport(base, {});
+      const imp = M.chaptersFromRaw(await importRaw(f), D.headingPlan(ex).chapterHeadings);
+      return M.merge(base, imp, new Set(ex.chapters.map((c) => c.id)));
+    };
+    const noteIds = (d) => d.chapters.flatMap((c) => c.blocks.flatMap((b) => b.runs.filter((r) => r.n).map((r) => r.n)));
+    // 1. nothing edited: nothing to import, nothing lost
+    let base = mk();
+    let r = await through(mk(), base);
+    assert.strictEqual(DD.compare(base, r.doc).rows.filter((x) => x.kind !== 'same').length, 0, 'an untouched Word copy shows no differences');
+    assert.deepStrictEqual(noteIds(r.doc), ['n1', 'n2'], 'notes stay');
+    assert(r.doc.chapters[1].goal === 500 && r.doc.chapters[0].nonum === true && r.doc.chapters.length === 4, 'targets, page-number settings and the empty chapter stay');
+    // 2. edits on the phone: reword one paragraph with a note, delete one, add one, add a chapter, rename a chapter
+    const ed = mk();
+    ed.chapters[1].blocks[3] = P('After the break', { text: ' second note changed a lot', n: 'n2' }); // note anchor text changed
+    ed.chapters[1].blocks.splice(1, 1); // "Before the break" deleted
+    ed.chapters[1].blocks.push(P('A brand new paragraph typed on the phone.'));
+    ed.chapters[3].title = 'The Last Chapter'; // renamed
+    ed.chapters.push({ id: 'zz', title: 'Epilogue', blocks: [P('Afterwards.')] });
+    r = await through(ed, mk());
+    const txt = (d) => d.chapters.map((c) => c.title + ':' + c.blocks.map((b) => D.blockText(b)).join('|')).join('\n');
+    assert(txt(r.doc).includes('second note changed a lot'), 'the edited paragraph is imported');
+    assert(!txt(r.doc).includes('Before the break'), 'the deleted paragraph is gone');
+    assert(txt(r.doc).includes('A brand new paragraph typed on the phone.'), 'the new paragraph is in');
+    assert(r.doc.chapters.some((c) => c.title === 'The Last Chapter' && c.id === 'c4'), 'a renamed chapter keeps its identity');
+    assert(r.doc.chapters[r.doc.chapters.length - 1].title === 'Epilogue', 'a new chapter is added at the end');
+    assert(noteIds(r.doc).includes('n1') && noteIds(r.doc).includes('n2'), 'notes survive an edited paragraph');
+    assert(r.doc.chapters.find((c) => c.id === 'c2').goal === 500, 'a chapter target survives edits');
+    assert(r.doc.chapters.find((c) => c.id === 'c3'), 'the empty chapter that was not in the Word copy stays');
+    assert(D.serializeDraft(Object.assign({ }, r.doc)).includes('"n"'), 'the merged book still saves with its notes');
+    // 3. formatting only changes are text changes too
+    const fm = mk(); fm.chapters[0].blocks[0] = P('Plain & simple ', { text: 'BOLD NOW', b: true });
+    r = await through(fm, mk());
+    assert(DD.compare(mk(), r.doc).changed >= 1, 'an edited paragraph shows as changed');
+    // 4. a book with one untitled chapter: headings are not chapters
+    const one = { id: 'o1', title: '', subtitle: '', author: '', extra: '', created: now, modified: now, notes: {}, chapters: [{ id: 'k', title: '', blocks: [{ t: 'h1', runs: [{ text: 'Heading' }] }, P('Body text here.'), { t: 'h2', runs: [{ text: 'Sub' }] }, P('More body.')] }] };
+    r = await through(one, JSON.parse(JSON.stringify(one)));
+    assert.strictEqual(r.doc.chapters.length, 1, 'a single untitled chapter stays one chapter');
+    assert(r.doc.chapters[0].blocks.map((b) => b.t).join(',') === 'h1,p,h2,p', 'heading levels survive in a single chapter book (' + r.doc.chapters[0].blocks.map((b) => b.t).join(',') + ')');
+    console.log('ok word copy merge');
+  }
+
   // every setting the app saves must really be in DEFAULT_PREFS (a stray // once swallowed five of them)
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   const block = mainSrc.slice(mainSrc.indexOf('const DEFAULT_PREFS = {'), mainSrc.indexOf('\n};', mainSrc.indexOf('const DEFAULT_PREFS = {')));
-  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal', 'pageSize', 'margins', 'notesMode', 'smartQuotes', 'friendly']) {
+  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal', 'pageSize', 'margins', 'notesMode', 'smartQuotes', 'friendly', 'companion']) {
     const line = block.split('\n').find((l) => new RegExp('(^|[ ,{])' + key + ':').test(l));
     assert(line, 'DEFAULT_PREFS has ' + key);
     assert(!/\/\/.*\b/.test(line.slice(0, line.search(new RegExp('(^|[ ,{])' + key + ':')) + 1)), key + ' is not inside a comment');

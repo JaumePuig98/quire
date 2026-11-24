@@ -433,3 +433,11 @@ select:focus-visible,#cmpBody:focus-visible,#exportMenu select:focus-visible{out
 #chapterList .pn.off{text-decoration:none;opacity:.6}
 #chapterList .pn.off .slash{display:block}
 #btnFull.on{background:rgb(var(--accent)/.22);color:rgb(var(--ink))}
+
+/* small (i) next to the settings that need a sentence of explanation */
+.info{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:6px;padding:0;border:1px solid rgb(var(--line));border-radius:50%;background:transparent;color:rgb(var(--muted));font:italic 600 11px/1 Georgia,serif;cursor:help;vertical-align:middle}
+.info:hover,.info:focus-visible{color:rgb(var(--ink));border-color:rgb(var(--muted))}
+.info:focus-visible{outline:2px solid rgb(var(--accent));outline-offset:1px}
+#infoTip{position:fixed;z-index:20;max-width:260px;padding:8px 11px;border-radius:8px;background:rgb(var(--ink));color:rgb(var(--bg));font-size:12px;line-height:1.45;pointer-events:none;box-shadow:0 6px 20px rgb(0 0 0/.25)}
+#infoTip[hidden]{display:none}
+@media (forced-colors:active){.info{border-color:CanvasText;color:CanvasText}#infoTip{background:Canvas;color:CanvasText;border:1px solid CanvasText}}

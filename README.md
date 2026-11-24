@@ -74,6 +74,8 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 **Smart quotes** (Settings, off by default): curly quotes in English, Spanish and Catalan (« ») or German style, and three dots become one ellipsis character. Turn it on only if you want the app to change what you type.
 
+**Word copy for your phone** (Settings, off by default). With this on, saving a book also writes a `.docx` next to the `.draft`. Keep the book in a Google Drive folder (Drive for desktop) and you can open the `.docx` in Google Docs on your phone and edit it there, still as a Word file. Next time you open the book in Quire, or come back to the window, Quire notices the changed Word copy and shows what changed, so you can **import** the changes or keep your version. Nothing is replaced without asking, a snapshot goes to History first, and your notes, chapter targets and page-number settings stay (they live in the `.draft`). Quire never overwrites a Word copy that was changed elsewhere without asking. Comments added in Word or Google Docs are not imported. Do not use "Save as Google Docs": that makes a separate Google Docs file that Quire cannot read; Quire will point that out if it sees one next to your book.
+
 **Friendly messages** (Settings, on by default): a short greeting when you open the app, depending on the time of day, and a cheer when you reach your daily goal or a chapter target (once a day each). One switch turns them off.
 
 **Comparing versions.** In History, **Compare** shows what changed between an earlier version and the text now: struck red words were in the old version, green words are new. You can open that version as a new document from there.
@@ -103,7 +105,7 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 ## Settings
 
-Press Ctrl+, to open Settings. Sections: Appearance, Page, Spacing, Writing line, Goals, Language and About (your version, updates and a **Copy diagnostics** button to paste into a bug report). Every slider has a number you can type and a small arrow to put it back to its default. **Reset all** restores everything.
+Press Ctrl+, to open Settings. A small **i** next to the more involved settings explains in a sentence what they do (hover or tab to it). Sections: Appearance, Page, Spacing, Writing line, Goals, Language and About (your version, updates and a **Copy diagnostics** button to paste into a bug report). Every slider has a number you can type and a small arrow to put it back to its default. **Reset all** restores everything.
 
 ![Dark theme](docs/writing-dark.png)
 

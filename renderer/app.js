@@ -304,6 +304,7 @@
       const p = parseByExtension(r.path, r.text);
       loadDoc(p.doc, p.path, { dirty: !!p.imported });
       if (p.imported) toast('Imported. Save to keep it as a .draft file.');
+      setTimeout(checkCompanion, 600);
     } catch (e) {
       await window.api.error(e.message);
     }
@@ -360,7 +361,8 @@
     updateTitle();
     updateFileHint();
     setSaveState('Saved');
-    toast(mode === 'as' ? 'Saved as ' + baseName(r.path) : 'Saved');
+    const comp = await syncCompanion();
+    toast((mode === 'as' ? 'Saved as ' + baseName(r.path) : 'Saved') + (comp === 'ok' ? ', Word copy updated' : ''));
     window.api.recoveryClear();
     editor.focus();
     return true;
@@ -1645,6 +1647,7 @@
     try { old = D.parseDraft(await window.api.versionsRead(it.file)); } catch (e) { window.api.error(e.message); return; }
     const res = DocDiff.compare(old, snapshotDoc());
     cmpState = { it, res };
+    $('#cmpOpen').hidden = false; $('#cmpImport').hidden = true; $('#cmpKeep').hidden = true;
     $('#cmpTitle').textContent = 'Compare: ' + (it.name ? it.name + ', ' : '') + new Date(it.time).toLocaleString() + ' and now';
     $('#cmpSummary').textContent = (res.added + res.removed + res.changed) === 0 ? 'No differences. The text is the same as that version.'
       : res.changed + ' paragraph' + (res.changed === 1 ? '' : 's') + ' edited, ' + res.added + ' added, ' + res.removed + ' removed (about ' + res.words + ' words). Struck red text was in that version, green text is new.';
@@ -1676,9 +1679,18 @@
     });
   }
   $('#cmpOnly').addEventListener('change', () => cmpState && renderCompare());
-  $('#cmpClose').addEventListener('click', () => { $('#cmpDlg').hidden = true; });
+  // The same dialog also shows the changes found in the Word copy, with buttons to import them.
+  let cmpResolve = null;
+  function closeCompare(result) {
+    $('#cmpDlg').hidden = true;
+    const r = cmpResolve; cmpResolve = null;
+    if (r) r(result || 'later');
+  }
+  $('#cmpClose').addEventListener('click', () => closeCompare('later'));
+  $('#cmpImport').addEventListener('click', () => closeCompare('import'));
+  $('#cmpKeep').addEventListener('click', () => closeCompare('keep'));
   $('#cmpOpen').addEventListener('click', async () => {
-    if (!cmpState) return;
+    if (!cmpState || !cmpState.it) return;
     try {
       const d = D.parseDraft(await window.api.versionsRead(cmpState.it.file));
       $('#cmpDlg').hidden = true; $('#modal').hidden = true;
@@ -1687,6 +1699,117 @@
     } catch (e) { window.api.error(e.message); }
   });
   $('#diagBtn').addEventListener('click', async () => { try { await window.api.diagnostics(); toast('Diagnostics copied. Paste them into your message.'); } catch (e) { toast('Could not copy diagnostics.'); } });
+
+  /* ---- (i) hints: a sentence about what a setting does, on hover or keyboard focus ---- */
+  {
+    const tip = $('#infoTip');
+    const place = (btn) => {
+      const r = btn.getBoundingClientRect();
+      tip.style.left = '0px'; tip.style.top = '0px';
+      const w = tip.offsetWidth, h = tip.offsetHeight;
+      const left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 8));
+      const top = r.top - h - 8 > 8 ? r.top - h - 8 : r.bottom + 8;
+      tip.style.left = left + 'px'; tip.style.top = top + 'px';
+    };
+    const show = (btn) => { tip.textContent = btn.dataset.text; tip.hidden = false; place(btn); };
+    const hide = () => { tip.hidden = true; };
+    $$('[data-info]').forEach((host, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'info'; b.textContent = 'i';
+      b.dataset.text = host.dataset.info;
+      b.setAttribute('aria-label', 'What does this do? ' + host.dataset.info);
+      b.addEventListener('mouseenter', () => show(b));
+      b.addEventListener('mouseleave', hide);
+      b.addEventListener('focus', () => show(b));
+      b.addEventListener('blur', hide);
+      b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); tip.hidden ? show(b) : hide(); });
+      // inside a label a click on the icon must not toggle the checkbox
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      if (host.tagName === 'LABEL' && host.classList.contains('check')) host.append(b); else if (host.classList.contains('row') || host.classList.contains('xrow')) { const first = host.firstElementChild; first.append(b); } else host.append(b);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); }, true);
+  }
+
+  /* ============================ Word copy next to the book ============================ */
+  const companionOn = () => !!prefs.companion && /\.draft$/i.test(filePath || '');
+  const companionOpts = () => ({ lang: (prefs.spellLangs && prefs.spellLangs[0]) || navigator.language || 'en', font: prefs.font, justify: prefs.justify !== false, author: doc.author || undefined, pageNumbers: prefs.pageNumbers !== false, pageSize: pageNow(), margins: prefs.margins || 'normal' });
+  // After a save: write Book.docx beside Book.draft. Never replaces a Word copy that was changed elsewhere without asking.
+  async function syncCompanion() {
+    if (!companionOn()) return null;
+    const write = (force) => window.api.companionWrite({ path: filePath, doc: snapshotDoc(), opts: companionOpts(), force: !!force });
+    let r = await write(false);
+    if (r.status === 'conflict') {
+      const c = await window.api.confirm({ message: 'Your Word copy has changes that are not in the book yet.', detail: 'It was edited outside Quire, for example on your phone. Review the changes before they are replaced.', buttons: ['Review the changes', 'Replace the Word copy with my version', 'Skip the Word copy this time'] });
+      if (c === 0) { await reviewCompanion(); return 'review'; }
+      if (c !== 1) { const st = await window.api.companionCheck(filePath); if (st.hash) companionSnooze.set(filePath, st.hash); return 'skipped'; } // do not ask again right away
+      r = await write(true);
+    } else if (r.status === 'exists') {
+      const c = await window.api.confirm({ message: r.name + ' already exists next to the book.', detail: 'Quire did not write that file. Replace it with the Word copy of this book?', buttons: ['Replace it', 'Skip the Word copy this time'] });
+      if (c !== 0) return 'skipped';
+      r = await write(true);
+    }
+    if (r.status === 'error') { toast('Saved, but the Word copy was not updated: ' + r.message, 4500); return 'error'; }
+    return r.status === 'ok' ? 'ok' : null;
+  }
+  // Show what changed in the Word copy and let the person bring it in. Returns 'same', 'import', 'keep' or 'later'.
+  const companionSnooze = new Map();
+  async function reviewCompanion() {
+    const read = await window.api.companionRead(filePath);
+    if (!read || read.error) { toast('Could not read the Word copy: ' + ((read && read.error) || 'unknown error'), 4500); return 'later'; }
+    const book = snapshotDoc();
+    const exportDoc = D.forExport(book, {});
+    const imported = DocMerge.chaptersFromRaw(read.raw, D.headingPlan(exportDoc).chapterHeadings);
+    const { doc: merged, stats } = DocMerge.merge(book, imported, new Set(exportDoc.chapters.map((c) => c.id)));
+    const res = DocDiff.compare(book, merged);
+    if (res.added + res.removed + res.changed + stats.chaptersAdded + stats.chaptersRemoved === 0) { await window.api.companionAccept(filePath); return 'same'; }
+    cmpState = { it: null, res };
+    $('#cmpTitle').textContent = 'Your Word copy changed';
+    const parts = [];
+    if (res.changed) parts.push(res.changed + ' paragraph' + (res.changed === 1 ? '' : 's') + ' edited');
+    if (res.added) parts.push(res.added + ' added');
+    if (res.removed) parts.push(res.removed + ' removed');
+    $('#cmpSummary').textContent = parts.join(', ') + '. Struck red text is in the book now, green text comes from the Word copy. Your notes, chapter targets and page-number settings stay. A snapshot is saved to History before anything is replaced.';
+    $('#cmpOpen').hidden = true; $('#cmpImport').hidden = false; $('#cmpKeep').hidden = false;
+    renderCompare();
+    $('#cmpDlg').hidden = false;
+    $('#cmpBody').focus();
+    const choice = await new Promise((resolve) => { cmpResolve = resolve; });
+    if (choice === 'import') {
+      const was = cur;
+      await window.api.snapshotDoc({ text: D.serializeDraft(book) });
+      loadDoc(merged, filePath, { dirty: true });
+      selectChapter(Math.max(0, Math.min(was, doc.chapters.length - 1)));
+      await window.api.companionAccept(filePath);
+      markDirty();
+      toast('Imported the changes from the Word copy. The earlier text is in History.', 4200);
+    } else if (choice === 'keep') {
+      const w = await window.api.companionWrite({ path: filePath, doc: snapshotDoc(), opts: companionOpts(), force: true });
+      toast(w.status === 'ok' ? 'Kept your version. The Word copy was replaced.' : 'Could not replace the Word copy.', 3600);
+    } else companionSnooze.set(filePath, read.hash);
+    if (!reading) editor.focus();
+    return choice;
+  }
+  let companionBusy = false;
+  const gdocAsked = new Set();
+  // On opening a book and whenever the window comes back to the front: has the Word copy changed, or is there a Google Docs pointer?
+  async function checkCompanion() {
+    if (companionBusy || !companionOn() || !doc || conflictOpen || !$('#cmpDlg').hidden || !$('#fileDlg').hidden) return;
+    companionBusy = true;
+    try {
+      const st = await window.api.companionCheck(filePath);
+      if (st.state === 'changed' && companionSnooze.get(filePath) !== st.hash) await reviewCompanion();
+      else if (st.state === 'gdoc' && !gdocAsked.has(st.gdoc)) {
+        gdocAsked.add(st.gdoc);
+        const c = await window.api.confirm({
+          message: 'There is a Google Docs file next to this book.',
+          detail: 'Quire cannot read Google Docs files, only the Word copy (.docx). If you edited the book in Google Docs, download it from there as a Word file (.docx) and save it in this folder over the old Word copy. Quire will then show the changes for review. Editing the .docx in Google Drive directly, without converting it, avoids this.',
+          buttons: ['Open it in Google Docs', 'Not now'],
+        });
+        if (c === 0) await window.api.openGdoc(st.gdoc);
+      }
+    } catch (e) { /* the Word copy is a convenience: never get in the way */ } finally { companionBusy = false; }
+  }
+  window.addEventListener('focus', () => setTimeout(checkCompanion, 400));
 
   /* ============================ panels ============================ */
   function closePanels() {
@@ -1745,7 +1868,7 @@
       if (activeNote && !$('#notePop').hidden) { e.preventDefault(); closeNotePop(false); return; }
       if (!fb.hidden) { e.preventDefault(); closeFind(); return; }
       if (!$('#fileDlg').hidden) return;
-      if (!$('#cmpDlg').hidden) { $('#cmpDlg').hidden = true; return; }
+      if (!$('#cmpDlg').hidden) { closeCompare('later'); return; }
       if (!$('#modal').hidden) { $('#modal').hidden = true; return; }
       if (anyPanelOpen()) { e.preventDefault(); closePanels(); if (!reading) editor.focus(); }
       return;
@@ -2198,7 +2321,7 @@
     el.addEventListener('focus', () => el.select());
   });
   $$('[data-reset]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.reset; savePrefs({ [k]: DEFAULTS[k] }); }));
-  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'richPaste', 'weight', 'size', 'measure', 'lineHeight', 'paraGap', 'indent', 'headBefore', 'headAfter', 'quoteGap', 'anchor', 'typewriter', 'centerMode', 'focus', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'showSession', 'autoUpdate', 'smartQuotes', 'friendly'];
+  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'richPaste', 'weight', 'size', 'measure', 'lineHeight', 'paraGap', 'indent', 'headBefore', 'headAfter', 'quoteGap', 'anchor', 'typewriter', 'centerMode', 'focus', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'showSession', 'autoUpdate', 'smartQuotes', 'friendly', 'companion'];
   $('#resetAll').addEventListener('click', () => {
     const patch = {};
     RESETTABLE.forEach((k) => { if (DEFAULTS[k] !== undefined) patch[k] = DEFAULTS[k]; });
@@ -2233,5 +2356,5 @@
   kick(true);
 
   // exposed for tests
-  window.__app = { cheer, openCompare, openResult, savePrefs, get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
+  window.__app = { checkCompanion, cheer, openCompare, openResult, savePrefs, get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
 })();

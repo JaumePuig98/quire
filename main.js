@@ -29,7 +29,7 @@ const DEFAULT_PREFS = {
   showSession: false, richPaste: true, pageNumbers: true, focus: 'off', streak: { last: '', count: 0, best: 0 },
   pageSize: null, margins: 'normal', // export page: null = Letter in Canada and the US, A4 elsewhere
   notesMode: 'comments', // export notes: off | comments | footnotes
-  smartQuotes: 'off', friendly: true, // off | en | es | de: curly quotes and a proper ellipsis while typing
+  smartQuotes: 'off', friendly: true, companion: false, // off | en | es | de: curly quotes and a proper ellipsis while typing
   recent: [],
   lastPath: null,
 };
@@ -445,6 +445,66 @@ ipcMain.handle('doc:export', async (e, { format, doc, opts, suggested, path: cho
   } catch (err) {
     return { error: err.message };
   }
+});
+
+/* ------------------------------ Word copy next to a book ------------------------------ */
+// With the setting on, saving a .draft also writes Book.docx beside it (for Google Drive on a phone). We remember the hash of what we wrote,
+// so we can tell when someone else changed that file, and never overwrite those changes without asking.
+const companionFile = () => userFile('companions.json');
+function companionRecords() { try { return JSON.parse(fs.readFileSync(companionFile(), 'utf8')); } catch (e) { return {}; } }
+function companionRecord(p, rec) {
+  const all = companionRecords();
+  if (rec) all[p] = rec; else delete all[p];
+  const keys = Object.keys(all);
+  if (keys.length > 200) delete all[keys[0]];
+  try { atomicWrite(companionFile(), JSON.stringify(all)); } catch (e) { /* the Word copy is a convenience: never fail a save over this */ }
+}
+const companionPathOf = (p) => (/\.draft$/i.test(String(p)) ? String(p).replace(/\.draft$/i, '.docx') : null);
+const fileHash = (f) => crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex');
+ipcMain.handle('companion:check', (e, p) => {
+  const docx = companionPathOf(p);
+  if (!docx) return { state: 'none' };
+  try {
+    const gdoc = String(p).replace(/\.draft$/i, '.gdoc');
+    const hasDocx = fs.existsSync(docx), rec = companionRecords()[p];
+    if (hasDocx && rec && fileHash(docx) !== rec.hash) return { state: 'changed', docx, hash: fileHash(docx) };
+    if (fs.existsSync(gdoc)) return { state: 'gdoc', gdoc }; // a Google Docs pointer: Quire cannot read it, but it can say so
+    return { state: hasDocx && !rec ? 'unknown' : 'ok', docx };
+  } catch (err) { return { state: 'none', error: err.message }; }
+});
+ipcMain.handle('companion:write', async (e, { path: p, doc, opts, force }) => {
+  const docx = companionPathOf(p);
+  if (!docx) return { status: 'none' };
+  try {
+    const rec = companionRecords()[p];
+    if (!force && fs.existsSync(docx)) {
+      if (!rec) return { status: 'exists', name: path.basename(docx) }; // a Word file of that name that Quire did not write
+      if (fileHash(docx) !== rec.hash) return { status: 'conflict' };
+    }
+    D.validate(doc);
+    const data = await X.toDocx(doc, Object.assign({}, opts, { titlePage: false, notes: true, notesMode: 'comments', embedDir: path.join(__dirname, 'exporter-fonts') }));
+    atomicWrite(docx, data);
+    companionRecord(p, { hash: crypto.createHash('sha1').update(data).digest('hex'), at: Date.now() });
+    return { status: 'ok', path: docx };
+  } catch (err) { return { status: 'error', message: err.code === 'EBUSY' || err.code === 'EPERM' ? 'is the Word copy open in Word?' : err.message }; }
+});
+ipcMain.handle('companion:read', async (e, p) => {
+  const docx = companionPathOf(p);
+  try { const { importRaw } = require('./docx-import'); return { raw: await importRaw(docx), hash: fileHash(docx) }; }
+  catch (err) { return { error: err.message }; }
+});
+// The changes in the Word copy were looked at (imported or left): its current content is the new baseline.
+ipcMain.handle('companion:accept', (e, p) => {
+  const docx = companionPathOf(p);
+  try { companionRecord(p, { hash: fileHash(docx), at: Date.now() }); return true; } catch (err) { return false; }
+});
+ipcMain.handle('companion:open-gdoc', (e, f) => {
+  try {
+    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    const url = j.url || (j.doc_id ? 'https://docs.google.com/document/d/' + encodeURIComponent(j.doc_id) + '/edit' : '');
+    if (/^https:\/\/docs\.google\.com\//.test(url)) { shell.openExternal(url); return true; }
+  } catch (err) { /* not a readable pointer */ }
+  return false;
 });
 
 ipcMain.handle('ui:confirm', async (e, { message, detail, buttons }) => {

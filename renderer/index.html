@@ -108,7 +108,7 @@
   <button type="button" data-format="epub">E-book <span class="hint">.epub</span></button>
   <button type="button" data-format="md">Markdown <span class="hint">.md</span></button>
   <button type="button" data-format="txt">Plain text <span class="hint">.txt</span></button>
-  <div class="xrow"><label for="exportNotes">Notes</label>
+  <div class="xrow" data-info="Leave notes out, or export them as comments (Word) or as real footnotes: footnotes in Word, a list at the end of each chapter in the PDF, linked endnotes in the e-book."><label for="exportNotes">Notes</label>
     <select id="exportNotes" aria-label="How notes are exported">
       <option value="off">Leave out</option>
       <option value="comments">As comments</option>
@@ -148,9 +148,10 @@
         <div class="row"><span>Font</span>
           <div class="seg" data-pref="font"><button type="button" data-v="serif">Literata</button><button type="button" data-v="sans">Nunito</button><button type="button" data-v="type">Typewriter</button></div></div>
         <label class="check"><input type="checkbox" data-pref="justify"> Justify text <span class="hint">quotes stay as they are</span></label>
-        <div class="row"><span>Smart quotes <small>and a real ellipsis</small></span><select data-pref="smartQuotes" aria-label="Smart quotes style"><option value="off">Off, keep what I type</option><option value="en">English “ ”</option><option value="es">Spanish and Catalan « »</option><option value="de">German „ “</option></select></div>
-        <label class="check"><input type="checkbox" data-pref="friendly"> Friendly messages <span class="hint">a short greeting and a cheer when you reach a goal</span></label>
-        <label class="check"><input type="checkbox" data-pref="richPaste"> Keep bold, italic and headings when pasting <span class="hint">Ctrl+Shift+V pastes plain</span></label>
+        <div class="row" data-info="Turns straight quotes into curly ones as you type, in the style you pick, and three dots into one ellipsis character. Off keeps exactly what you type."><span>Smart quotes <small>and a real ellipsis</small></span><select data-pref="smartQuotes" aria-label="Smart quotes style"><option value="off">Off, keep what I type</option><option value="en">English “ ”</option><option value="es">Spanish and Catalan « »</option><option value="de">German „ “</option></select></div>
+        <label class="check" data-info="Saving also writes a Word copy (.docx) next to the book. Edit it on your phone in Google Docs; next time Quire shows the changes for you to review before importing them."><input type="checkbox" data-pref="companion"> Keep a Word copy next to the book</label>
+        <label class="check" data-info="A short greeting when the app opens and a cheer when you reach your daily goal or a chapter target, at most once a day each."><input type="checkbox" data-pref="friendly"> Friendly messages</label>
+        <label class="check" data-info="Pasting keeps bold, italic, underline, headings and quotes, and drops other formatting. Ctrl+Shift+V always pastes plain text."><input type="checkbox" data-pref="richPaste"> Keep bold, italic and headings when pasting</label>
         <label class="check"><input type="checkbox" data-pref="fmtbar"> Show the formatting bar <span class="hint">Ctrl+/</span></label>
       </section>
       <section data-secpane="page" hidden>
@@ -168,18 +169,18 @@
         <p class="small">Line spacing also sets the distance between the line you write and the one above it. Exports keep their own standard spacing.</p>
       </section>
       <section data-secpane="line" hidden>
-        <label class="check"><input type="checkbox" data-pref="typewriter"> Typewriter scrolling <span class="hint">the line you write stays put</span></label>
+        <label class="check" data-info="The line you are writing stays at the same height and the text slides under it, like a typewriter."><input type="checkbox" data-pref="typewriter"> Typewriter scrolling</label>
         <div class="row slider"><span>Line position</span><input type="range" min="45" max="82" step="1" data-pref="anchor" aria-label="Line position"><span class="num"><input type="number" min="45" max="82" step="1" data-num="anchor" aria-label="Line position, exact value"><em>%</em></span><button type="button" class="reset" data-reset="anchor" title="Back to the default" aria-label="Reset Line position">&#8634;</button></div>
-        <div class="row"><span>Caret centering <small>new text only</small></span>
+        <div class="row" data-info="Off: the page does not move. Soft: the caret may wander a little, then the line glides back. Centered: the caret stays in the middle. Only new text moves it."><span>Caret centering <small>new text only</small></span>
           <div class="seg" data-pref="centerMode"><button type="button" data-v="off">Off</button><button type="button" data-v="soft">Soft</button><button type="button" data-v="strict">Centered</button></div></div>
-        <div class="row"><span>Focus <small>dims the rest</small></span>
+        <div class="row" data-info="Dims everything except the paragraph or the sentence you are writing, so nothing else pulls your eye."><span>Focus <small>dims the rest</small></span>
           <div class="seg" data-pref="focus"><button type="button" data-v="off">Off</button><button type="button" data-v="paragraph">Paragraph</button><button type="button" data-v="sentence">Sentence</button></div></div>
         <label class="check"><input type="checkbox" data-pref="fade"> Fade earlier text</label>
         <label class="check"><input type="checkbox" data-pref="glow"> Soft light at the writing line</label>
       </section>
       <section data-secpane="goals" hidden>
-        <div class="row"><span>Daily word goal <small>0 = off</small></span><input type="number" class="plain" min="0" max="100000" step="50" data-pref="goal" aria-label="Daily word goal"></div>
-        <div class="row"><span>Book target <small>words, 0 = off</small></span><input type="number" class="plain" min="0" max="2000000" step="1000" data-pref="bookGoal" aria-label="Book target in words"></div>
+        <div class="row" data-info="Words to write each day. Reaching it counts the day toward your streak of days in a row."><span>Daily word goal <small>0 = off</small></span><input type="number" class="plain" min="0" max="100000" step="50" data-pref="goal" aria-label="Daily word goal"></div>
+        <div class="row" data-info="A word target for the whole book, shown as progress while you write. Each chapter can also have its own target in the Chapters panel."><span>Book target <small>words, 0 = off</small></span><input type="number" class="plain" min="0" max="2000000" step="1000" data-pref="bookGoal" aria-label="Book target in words"></div>
         <label class="check"><input type="checkbox" data-pref="showSession"> Show words written this session</label>
         <p class="small" id="streakNote"></p>
       </section>
@@ -191,7 +192,7 @@
         <p class="aboutline"><strong>Quire</strong> <span id="aboutVersion"></span> <span class="hint" id="aboutKind"></span></p>
         <p class="small" id="updateStatus" role="status" aria-live="polite"></p>
         <div class="row"><button type="button" id="diagBtn" title="Copies version, system and update log details to the clipboard, to paste into a bug report">Copy diagnostics</button><button type="button" id="updateCheck">Check for updates</button><button type="button" id="updateInstall" class="primary" hidden>Restart and install</button></div>
-        <label class="check"><input type="checkbox" data-pref="autoUpdate"> Check for updates automatically <span class="hint">installed version only</span></label>
+        <label class="check" data-info="Looks for a newer version when the app starts and every few hours, downloads it quietly and installs it when you close the app. Installed version only, not the portable files."><input type="checkbox" data-pref="autoUpdate"> Check for updates automatically</label>
         <p class="small"><a href="https://github.com/JaumePuig98/quire/releases" target="_blank" rel="noopener">All versions and downloads</a> &middot; <a href="https://github.com/JaumePuig98/quire/issues" target="_blank" rel="noopener">Report a problem</a></p>
       </section>
       </div>
@@ -226,7 +227,7 @@
     <div class="panel-head"><strong id="cmpTitle">Compare</strong><button type="button" id="cmpClose">Close</button></div>
     <p class="small" id="cmpSummary" role="status"></p>
     <div id="cmpBody" role="region" tabindex="0" aria-label="Differences"></div>
-    <div class="actions"><label class="check"><input type="checkbox" id="cmpOnly" checked> Show only what changed</label><span class="grow"></span><button type="button" id="cmpOpen">Open that version as a new document</button></div>
+    <div class="actions"><label class="check"><input type="checkbox" id="cmpOnly" checked> Show only what changed</label><span class="grow"></span><button type="button" id="cmpOpen">Open that version as a new document</button><button type="button" id="cmpKeep" hidden>Keep my version</button><button type="button" id="cmpImport" class="primary" hidden>Import these changes</button></div>
   </div>
 </div>
 
@@ -247,10 +248,12 @@
   </div>
 </div>
 
+<div id="infoTip" role="tooltip" hidden></div>
 <div id="toast" role="status"></div>
 
 <script src="../shared/doc.js"></script>
 <script src="../shared/diff.js"></script>
+<script src="../shared/merge.js"></script>
 <script src="filebrowser.js"></script>
 <script src="app.js"></script>
 </body>

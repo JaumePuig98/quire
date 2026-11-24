@@ -419,6 +419,81 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       ok(cheers.on.length > 10 && !cheers.on.includes('\u2014'), 'a cheer shows a short friendly message (' + cheers.on + ')');
       ok(cheers.off === '', 'Friendly messages off shows nothing');
     }
+    // (i) hints explain the more involved settings on hover and on keyboard focus
+    {
+      await page.evaluate(() => { if (document.querySelector('#settings').hidden) document.querySelector('#btnSettings').click(); }); await page.waitForTimeout(400);
+      await page.evaluate(() => document.querySelector('[data-sec=look]').click()); await page.waitForTimeout(200);
+      const n = await page.locator('#settings .info').count();
+      ok(n >= 8, 'the settings carry (i) hints (' + n + ')');
+      const btn = page.locator('[data-secpane=look] .info').first();
+      await btn.hover(); await page.waitForTimeout(250);
+      const shown = await page.evaluate(() => ({ hidden: document.querySelector('#infoTip').hidden, text: document.querySelector('#infoTip').textContent }));
+      ok(!shown.hidden && shown.text.length > 40 && !shown.text.includes('\u2014'), 'hovering an (i) shows a short explanation');
+      await page.mouse.move(5, 5); await page.waitForTimeout(250);
+      ok(await page.evaluate(() => document.querySelector('#infoTip').hidden), 'and it goes away again');
+      await btn.focus(); await page.waitForTimeout(200);
+      ok(await page.evaluate(() => !document.querySelector('#infoTip').hidden), 'keyboard focus shows it too');
+      await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+      ok(await page.evaluate(() => document.querySelector('#infoTip').hidden && document.querySelector('#settings').hidden), 'Escape hides it and closes the panel');
+    }
+
+    // Word copy next to the book: written on save, changes made elsewhere are reviewed, never overwritten silently
+    {
+      const bookPath = path.join(docs, 'wordcopy.draft'), docxPath = path.join(docs, 'wordcopy.docx');
+      const P = (...runs) => ({ t: 'p', runs: runs.map((r) => (typeof r === 'string' ? { text: r } : r)) });
+      await page.evaluate(async ({ bookPath }) => {
+        const D = window.DocFmt, A = window.__app;
+        const d = D.newDoc(); d.title = 'Word Copy Book';
+        d.notes = { n1: { text: 'a note', created: new Date().toISOString() } };
+        d.chapters = [{ id: 'k1', title: 'Chapter A', goal: 300, blocks: [{ t: 'p', runs: [{ text: 'First paragraph of the book.' }] }, { t: 'p', runs: [{ text: 'Second paragraph with a ' }, { text: 'note', n: 'n1' }, { text: ' inside.' }] }] }, { id: 'k2', title: 'Chapter B', blocks: [{ t: 'p', runs: [{ text: 'Chapter B text.' }] }] }];
+        await window.api.save({ path: bookPath, text: D.serializeDraft(d) });
+        A.savePrefs({ companion: true });
+        A.loadDoc(d, bookPath);
+      }, { bookPath });
+      await page.waitForTimeout(500);
+      await page.click('#editor'); await page.keyboard.press('Control+s'); await page.waitForTimeout(1500);
+      ok(fs.existsSync(docxPath), 'saving writes a Word copy next to the book');
+      const hashA = fs.readFileSync(docxPath).length;
+      // someone edits the Word copy elsewhere (here: a changed export of the same book)
+      await page.evaluate(async ({ docxPath }) => {
+        const A = window.__app, d = JSON.parse(JSON.stringify(A.snapshotDoc()));
+        d.chapters[0].blocks[0].runs = [{ text: 'First paragraph, rewritten on the phone.' }];
+        d.chapters[0].blocks.push({ t: 'p', runs: [{ text: 'A new paragraph from the phone.' }] });
+        await window.api.exportDoc({ format: 'docx', doc: d, path: docxPath, opts: { titlePage: false, notes: true, notesMode: 'comments' } });
+      }, { docxPath });
+      await page.evaluate(() => { window.__app.checkCompanion(); }); // the review waits for a click, so do not wait for it here
+      await page.waitForTimeout(1500);
+      ok(await page.evaluate(() => !document.querySelector('#cmpDlg').hidden && !document.querySelector('#cmpImport').hidden), 'a changed Word copy opens the review');
+      const sum = await page.textContent('#cmpSummary');
+      ok(/1 paragraph edited, 1 added/.test(sum), 'the review says what changed (' + sum.slice(0, 60) + ')');
+      await page.click('#cmpImport'); await page.waitForTimeout(1500);
+      const after = await page.evaluate(() => { const d = window.__app.snapshotDoc(); return { text: d.chapters[0].blocks.map((b) => b.runs.map((r) => r.text).join('')), notes: JSON.stringify(d.chapters[0].blocks).includes('"n":"n1"'), goal: d.chapters[0].goal, hist: 1 }; });
+      ok(after.text[0] === 'First paragraph, rewritten on the phone.' && after.text.includes('A new paragraph from the phone.'), 'importing brings the phone edits in');
+      ok(after.notes && after.goal === 300, 'notes and chapter targets stay after an import');
+      // saving after the import rewrites the Word copy without asking (it was accepted)
+      await page.keyboard.press('Control+s'); await page.waitForTimeout(1500);
+      ok(fs.statSync(docxPath).size > 0, 'saving after an import writes the Word copy again');
+      // the Word copy changes again, and a save must not overwrite it silently
+      await page.evaluate(async ({ docxPath }) => {
+        const d = JSON.parse(JSON.stringify(window.__app.snapshotDoc()));
+        d.chapters[1].blocks[0].runs = [{ text: 'Chapter B edited elsewhere.' }];
+        await window.api.exportDoc({ format: 'docx', doc: d, path: docxPath, opts: { titlePage: false, notes: true, notesMode: 'comments' } });
+      }, { docxPath });
+      const before = fs.readFileSync(docxPath);
+      await setAnswer(2); // "Skip the Word copy this time"
+      await page.click('#editor'); await page.keyboard.type(' x'); await page.keyboard.press('Control+s'); await page.waitForTimeout(1500);
+      ok(Buffer.compare(before, fs.readFileSync(docxPath)) === 0, 'a save never overwrites a Word copy that was changed elsewhere');
+      await setAnswer(1); // "Not now" for the Google Docs question (0 would open a browser)
+      // a Google Docs pointer next to the book is noticed and does not break anything
+      fs.writeFileSync(path.join(docs, 'wordcopy.gdoc'), JSON.stringify({ url: 'https://docs.google.com/open?id=abc', doc_id: 'abc' }));
+      await page.evaluate(() => { window.__app.checkCompanion(); });
+      await page.waitForTimeout(800);
+      ok(true, 'a .gdoc pointer next to the book is handled without errors');
+      await page.evaluate(() => { document.querySelector('#cmpDlg').hidden = true; });
+      await page.evaluate(() => window.__app.savePrefs({ companion: false }));
+      await page.evaluate(() => window.__app.loadDoc(window.DocFmt.newDoc(), null)); await page.waitForTimeout(300);
+    }
+
     // the Full screen button shows whether full screen is on
     {
       const lab = () => page.evaluate(() => document.querySelector('#btnFull').textContent + '|' + document.querySelector('#btnFull').getAttribute('aria-pressed'));
