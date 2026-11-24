@@ -78,11 +78,14 @@
 <div id="readbar" role="region" aria-label="Reading options" hidden>
   <span class="hint">Reading</span>
   <div class="seg" id="readScope" data-pref="readScope" role="group" aria-label="What to read"><button type="button" data-v="chapter">This chapter</button><button type="button" data-v="book">Whole book</button></div>
+  <button type="button" id="readListen" title="Read this aloud with a voice from your computer">Listen</button>
   <button type="button" id="readBack">Back to writing</button>
 </div>
 
+<footer aria-label="Status">
 <div id="status" aria-live="polite"><span id="statusLeft"></span></div>
 <div id="saveState"></div>
+</footer>
 
 <!-- Chapters -->
 <aside id="outline" aria-label="Chapters" hidden>
@@ -142,8 +145,8 @@
       </nav>
       <div class="st-pane">
       <section data-secpane="look">
-        <div class="row"><span>Theme</span>
-          <div class="seg" data-pref="theme"><button type="button" data-v="system">Auto</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></div></div>
+        <div class="row" data-info="Auto follows Windows. Evening is light by day and switches to dark at sunset, then back to light at sunrise, following the seasons for your time zone."><span>Theme</span>
+          <div class="seg" data-pref="theme"><button type="button" data-v="system">Auto</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button><button type="button" data-v="evening">Evening</button></div></div>
         <div class="row"><span>Accent color</span><div class="swatches" data-pref="accent" role="group" aria-label="Accent color"></div></div>
         <div class="row"><span>Font</span>
           <div class="seg" data-pref="font"><button type="button" data-v="serif">Literata</button><button type="button" data-v="sans">Nunito</button><button type="button" data-v="type">Typewriter</button></div></div>
@@ -176,13 +179,26 @@
         <div class="row" data-info="Dims everything except the paragraph or the sentence you are writing, so nothing else pulls your eye."><span>Focus <small>dims the rest</small></span>
           <div class="seg" data-pref="focus"><button type="button" data-v="off">Off</button><button type="button" data-v="paragraph">Paragraph</button><button type="button" data-v="sentence">Sentence</button></div></div>
         <label class="check"><input type="checkbox" data-pref="fade"> Fade earlier text</label>
+        <div class="row slider" data-info="How far down the page the fade reaches. Lower means more of the earlier text stays clearly visible."><span>Fade distance</span><input type="range" min="20" max="100" step="5" data-pref="fadeReach" aria-label="Fade distance"><span class="num"><input type="number" min="20" max="100" step="5" data-num="fadeReach" aria-label="Fade distance, exact value"><em>%</em></span><button type="button" class="reset" data-reset="fadeReach" title="Back to the default" aria-label="Reset Fade distance">&#8634;</button></div>
+        <div class="row" data-info="The shape of the caret on the writing line. A block caret looks like a typewriter."><span>Caret</span>
+          <div class="seg" data-pref="caret"><button type="button" data-v="bar">Bar</button><button type="button" data-v="block">Block</button><button type="button" data-v="underline">Underline</button></div></div>
+        <label class="check"><input type="checkbox" data-pref="caretBlink"> Blinking caret</label>
+        <label class="check" data-info="When you type the start of a capitalized word that appears often in your book, such as a character or a place, a small hint offers the rest. Press Tab to accept."><input type="checkbox" data-pref="names"> Suggest names while typing</label>
         <label class="check"><input type="checkbox" data-pref="glow"> Soft light at the writing line</label>
+        <div class="row slider" data-info="How bright the soft light at the writing line is. 100% is the default, 0% hides it, up to 200% makes it stronger."><span>Light strength</span><input type="range" min="0" max="200" step="5" data-pref="glowStrength" aria-label="Light strength"><span class="num"><input type="number" min="0" max="200" step="5" data-num="glowStrength" aria-label="Light strength, exact value"><em>%</em></span><button type="button" class="reset" data-reset="glowStrength" title="Back to the default" aria-label="Reset Light strength">&#8634;</button></div>
+        <div class="row" data-info="The color of the soft light. The first swatch makes it follow your accent color."><span>Light color</span><div class="swatches" data-pref="glowColor" role="group" aria-label="Light color"></div></div>
       </section>
       <section data-secpane="goals" hidden>
         <div class="row" data-info="Words to write each day. Reaching it counts the day toward your streak of days in a row."><span>Daily word goal <small>0 = off</small></span><input type="number" class="plain" min="0" max="100000" step="50" data-pref="goal" aria-label="Daily word goal"></div>
         <div class="row" data-info="A word target for the whole book, shown as progress while you write. Each chapter can also have its own target in the Chapters panel."><span>Book target <small>words, 0 = off</small></span><input type="number" class="plain" min="0" max="2000000" step="1000" data-pref="bookGoal" aria-label="Book target in words"></div>
         <label class="check"><input type="checkbox" data-pref="showSession"> Show words written this session</label>
+        <div class="row" data-info="A timed writing burst with no countdown on screen until the last minute. When time is up you see how many words you wrote. Ctrl+Shift+T starts or stops it."><span>Sprint <small>minutes</small></span><span class="grow"></span><select data-pref="sprintMin" aria-label="Sprint length in minutes"><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="30">30</option><option value="45">45</option><option value="60">60</option></select> <button type="button" id="btnSprint" class="linkbtn">Start</button></div>
+        <div class="row" data-info="Pick the date you want to finish the book. With a book target set, Quire works out how many words a day that takes."><span>Finish by</span><input type="date" class="plain" data-pref="finishBy" aria-label="Finish by"><button type="button" class="reset" data-reset="finishBy" title="Clear the date" aria-label="Clear the finish date">&#8634;</button></div>
+        <p class="small" id="paceNote"></p>
         <p class="small" id="streakNote"></p>
+        <div class="row stack" data-info="The last twelve weeks, one square per day, darker for more words. It is kept on this computer only."><span>Writing calendar</span></div>
+        <div id="dayGrid" role="img" aria-label="Writing calendar"></div>
+        <p class="small" id="dayNote"></p>
       </section>
       <section data-secpane="lang" hidden>
         <div class="row"><span>Spellcheck language</span><select id="spellA" aria-label="Spellcheck language"></select></div>
@@ -197,7 +213,7 @@
       </section>
       </div>
     </div>
-    <p class="small">Ctrl+Alt+M note &middot; Ctrl+Shift+O chapters &middot; F11 full screen</p>
+    <p class="small">Ctrl+Alt+M note &middot; Ctrl+Shift+O chapters &middot; Ctrl+J next placeholder &middot; Ctrl+Shift+T sprint &middot; Win+H dictate &middot; F11 full screen</p>
   </div>
 </div>
 
@@ -218,6 +234,14 @@
       <button type="button" id="versionSaveBtn" class="primary">Save version</button>
     </div>
     <ul id="versionList"></ul>
+  </div>
+</div>
+
+<!-- New book: blank or a starting structure -->
+<div id="tplDlg" hidden>
+  <div class="modal-box tpl" role="dialog" aria-modal="true" aria-labelledby="tplTitle">
+    <div class="panel-head"><strong id="tplTitle">New book</strong><button type="button" id="tplCancel">Cancel</button></div>
+    <div id="tplList" role="group" aria-label="Start from"></div>
   </div>
 </div>
 
@@ -250,9 +274,13 @@
 
 <div id="infoTip" role="tooltip" hidden></div>
 <div id="toast" role="status"></div>
+<div id="nameHint" hidden></div>
 
 <script src="../shared/doc.js"></script>
 <script src="../shared/diff.js"></script>
+<script src="../shared/sun.js"></script>
+<script src="../shared/templates.js"></script>
+<script src="../shared/whatsnew.js"></script>
 <script src="../shared/merge.js"></script>
 <script src="filebrowser.js"></script>
 <script src="app.js"></script>

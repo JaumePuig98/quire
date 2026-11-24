@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const D = require('./shared/doc.js');
+const Sun = require('./shared/sun.js');
 const X = require('./exporters.js');
 const { toEpub } = require('./epub.js');
 
@@ -13,7 +14,7 @@ const OPEN_EXTS = FILE_EXTS.concat('.docx');
 
 /* ---------------------------- preferences ---------------------------- */
 const DEFAULT_PREFS = {
-  theme: 'system', // system | light | dark
+  theme: 'system', // system | light | dark | evening (light by day, dark between sunset and sunrise)
   font: 'serif', // serif | sans
   size: 22, weight: 400,
   lineHeight: 1.7, paraGap: 0.6, indent: 0, headBefore: 0.9, headAfter: 0.4, quoteGap: 0.9, // spacing
@@ -21,7 +22,10 @@ const DEFAULT_PREFS = {
   anchor: 68, // % of the window height where the writing line sits
   typewriter: true,
   fade: true,
-  glow: true,
+  finishBy: '', lastVersion: '', // finish date (YYYY-MM-DD) for the daily pace; the version whose release note was last shown
+  introSeen: true, // set to false only on a first install (no settings file yet), so updates never show the first-run hint
+  caret: 'bar', caretBlink: true, fadeReach: 100, names: true, sprintMin: 20, // caret: bar | block | underline; fadeReach in % of the default fade; names: Tab completes names
+  glow: true, glowStrength: 100, glowColor: 'accent', // strength in % of the default; color: accent (follows the accent color), a color name or white
   goal: 0, // daily word goal, 0 = off
   fullscreen: true,
   readScope: 'chapter', centerMode: 'strict', justify: true, fmtbar: true, bookGoal: 0, autoUpdate: true, // text slides sideways so the caret stays in the middle
@@ -36,7 +40,7 @@ const DEFAULT_PREFS = {
 const userFile = (n) => path.join(app.getPath('userData'), n);
 let prefs = Object.assign({}, DEFAULT_PREFS);
 function loadPrefs() {
-  try { prefs = Object.assign({}, DEFAULT_PREFS, JSON.parse(fs.readFileSync(userFile('settings.json'), 'utf8'))); } catch (e) { /* first run */ }
+  try { prefs = Object.assign({}, DEFAULT_PREFS, JSON.parse(fs.readFileSync(userFile('settings.json'), 'utf8'))); } catch (e) { prefs.introSeen = false; /* first run */ }
 }
 function savePrefs() {
   try { fs.mkdirSync(app.getPath('userData'), { recursive: true }); atomicWrite(userFile('settings.json'), JSON.stringify(prefs, null, 2)); } catch (e) { /* ignore */ }
@@ -55,7 +59,7 @@ function atomicWrite(file, data) {
     }
   }
 }
-const isDark = () => (prefs.theme === 'system' ? nativeTheme.shouldUseDarkColors : prefs.theme === 'dark');
+const isDark = () => (prefs.theme === 'system' ? nativeTheme.shouldUseDarkColors : prefs.theme === 'evening' ? Sun.isNight() : prefs.theme === 'dark');
 const BG = { light: '#F4F1EA', dark: '#181715' };
 
 /* ------------------------------ updates ------------------------------ */
@@ -301,7 +305,7 @@ ipcMain.on('init:get', (e) => {
     try { recovery = fs.readFileSync(recoveryFile(), 'utf8'); } catch (err) { /* none */ }
     if (!recovery && prefs.lastPath && fs.existsSync(prefs.lastPath)) open = readDoc(prefs.lastPath);
   }
-  e.returnValue = { prefs, defaults: DEFAULT_PREFS, systemDark: nativeTheme.shouldUseDarkColors, open, recovery, fullscreen: win ? win.isFullScreen() : false };
+  e.returnValue = { version: app.getVersion(), prefs, defaults: DEFAULT_PREFS, systemDark: nativeTheme.shouldUseDarkColors, open, recovery, fullscreen: win ? win.isFullScreen() : false };
 });
 ipcMain.on('prefs:set', (e, p) => {
   if (!p || typeof p !== 'object') return;

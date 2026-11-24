@@ -4,6 +4,8 @@ A quiet place to write long things, like books.
 
 The line you are writing stays in one place, low on the screen, like paper feeding through a typewriter. Everything else stays out of the way.
 
+![A short writing session](docs/demo.gif)
+
 ![Writing in Quire](docs/writing-light.png)
 
 ## Download
@@ -11,6 +13,7 @@ The line you are writing stays in one place, low on the screen, like paper feedi
 Get the installer from the [**Releases**](../../releases/latest) page:
 
 * **`Quire-Setup-x.y.z.exe`**: the normal installer. Works on every Windows PC, Intel/AMD or ARM (such as a Surface Pro X).
+* **`Quire-x.y.z-x86_64.AppImage`** (Linux, new, 64-bit only): make it executable with `chmod +x` and run it.
 * **`Quire-Portable-x.y.z-x64.exe`** (or `-arm64.exe`): runs without installing, from a USB stick for example. It does not update itself.
 
 **Windows will warn you the first time.** Quire is not code-signed (a signing certificate costs money and is not worth it for a small free project), so Windows SmartScreen shows "Windows protected your PC". Click **More info**, then **Run anyway**. The warning is about the missing signature, not about anything found in the file.
@@ -20,12 +23,13 @@ The installed version checks for a new release when it starts and every few hour
 ## What it does
 
 * **A typewriter line.** The line you are typing stays near the middle of the screen while the text slides under it. Moving around or editing older text never moves anything.
-* **Made for books.** Chapters, a table of contents for each chapter, a title page with subtitle, author and an extra line, and notes on any passage.
+* **Made for books.** Chapters, a table of contents for each chapter, a title page with subtitle, author and an extra line, and notes on any passage. A new book can start blank or from a simple structure: novel, short story, non-fiction book or scientific article.
 * **Quiet by default.** Menus hide while you type. Focus mode dims everything except the paragraph or sentence you are writing.
-* **Your page, your way.** Light and dark themes, three bundled fonts, text weight, size and width, and full control of the spacing between lines, paragraphs, headings and quotes.
+* **Your page, your way.** Light, dark and an Evening theme that turns dark at sunset (worked out from your time zone, no internet needed),  three bundled fonts, text weight, size and width, and full control of the spacing between lines, paragraphs, headings and quotes.
 * **Review mode** for proof-reading, with typos and notes standing out. Spellcheck works in several languages.
-* **Reading mode** to read a chapter or the whole book as a reader would.
-* **Goals** (optional): a daily word goal, a book target, a streak of days in a row and the words written this session. Each chapter can also have its own word target: click the word count of a chapter in the Chapters panel.
+* **Reading mode** to read a chapter or the whole book as a reader would, with a **Listen** button that reads it aloud using a voice installed on your computer. Hearing it is a good way to catch what your eyes skip.
+* **Keeps you moving.** Do not know a name or a fact? Type `TK` or `[[what you need]]`, keep writing, and jump back through them with Ctrl+J. Sprints give you a timed burst with no countdown until the last minute. Names that keep coming up in your book are offered as you type (Tab accepts).
+* **Goals** (optional): a daily word goal, a book target, a streak of days in a row, the words written this session, a finish date that works out how many words a day you need, and a calendar of the last twelve weeks (kept on your computer only). Each chapter can also have its own word target: click the word count of a chapter in the Chapters panel.
 * **Your work is safe.** Automatic saving, a recovery copy if the app closes unexpectedly, and a History of snapshots you can open at any time. You can name a version, for example "Before the rewrite".
 * **Open and export.** Open `.draft`, Markdown, plain text and Word files. Export to Word, PDF, an e-book (`.epub`), Markdown or plain text, choosing the chapters, page size and margins, and whether to include the title page and page numbers.
 
@@ -53,6 +57,9 @@ You can also drag a file onto the window to open it.
 | Undo / redo (each chapter keeps its own) | Ctrl+Z / Ctrl+Y |
 | Find / find and replace | Ctrl+F / Ctrl+H (F3 for the next match; **List** shows every match) |
 | Paste as plain text | Ctrl+Shift+V |
+| Next / previous placeholder (`TK` or `[[ ]]`) | Ctrl+J / Ctrl+Shift+J |
+| Start or stop a sprint | Ctrl+Shift+T |
+| Accept a name suggestion | Tab |
 | Chapters panel | Ctrl+Shift+O |
 | Next / previous chapter | Ctrl+PageDown / Ctrl+PageUp |
 | New / open / save / save as | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S |
@@ -75,6 +82,8 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 **Smart quotes** (Settings, off by default): curly quotes in English, Spanish and Catalan (« ») or German style, and three dots become one ellipsis character. Turn it on only if you want the app to change what you type.
 
 **Word copy for your phone** (Settings, off by default). With this on, saving a book also writes a `.docx` next to the `.draft`. Keep the book in a Google Drive folder (Drive for desktop) and you can open the `.docx` in Google Docs on your phone and edit it there, still as a Word file. Next time you open the book in Quire, or come back to the window, Quire notices the changed Word copy and shows what changed, so you can **import** the changes or keep your version. Nothing is replaced without asking, a snapshot goes to History first, and your notes, chapter targets and page-number settings stay (they live in the `.draft`). Quire never overwrites a Word copy that was changed elsewhere without asking. Comments added in Word or Google Docs are not imported. Do not use "Save as Google Docs": that makes a separate Google Docs file that Quire cannot read; Quire will point that out if it sees one next to your book.
+
+**Dictation.** Quire has no voice typing of its own, but Windows voice typing (Win+H) can dictate into it like any other text field.
 
 **Friendly messages** (Settings, on by default): a short greeting when you open the app, depending on the time of day, and a cheer when you reach your daily goal or a chapter target (once a day each). One switch turns them off.
 

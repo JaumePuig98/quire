@@ -264,10 +264,63 @@ const X = require('../exporters.js');
   // every setting the app saves must really be in DEFAULT_PREFS (a stray // once swallowed five of them)
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   const block = mainSrc.slice(mainSrc.indexOf('const DEFAULT_PREFS = {'), mainSrc.indexOf('\n};', mainSrc.indexOf('const DEFAULT_PREFS = {')));
-  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal', 'pageSize', 'margins', 'notesMode', 'smartQuotes', 'friendly', 'companion']) {
+  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal', 'pageSize', 'margins', 'notesMode', 'smartQuotes', 'friendly', 'companion', 'glowStrength', 'glowColor', 'introSeen', 'finishBy', 'lastVersion', 'caret', 'caretBlink', 'fadeReach', 'names', 'sprintMin']) {
     const line = block.split('\n').find((l) => new RegExp('(^|[ ,{])' + key + ':').test(l));
     assert(line, 'DEFAULT_PREFS has ' + key);
     assert(!/\/\/.*\b/.test(line.slice(0, line.search(new RegExp('(^|[ ,{])' + key + ':')) + 1)), key + ' is not inside a comment');
   }
   console.log('ok default settings');
+  {
+    // starting structures and release notes
+    const TP = require('../shared/templates.js'), WN = require('../shared/whatsnew.js');
+    assert(TP.list.length >= 5 && TP.list[0].id === 'blank', 'templates start with a blank book');
+    const ids = new Set();
+    for (const tpl of TP.list) {
+      assert(!ids.has(tpl.id), 'template ids are unique'); ids.add(tpl.id);
+      const doc = TP.build(D, tpl.id);
+      assert(D.validate(doc), tpl.id + ' builds a valid document');
+      assert(doc.chapters.length >= 1 && new Set(doc.chapters.map((c) => c.id)).size === doc.chapters.length, tpl.id + ' has chapters with unique ids');
+      const back = D.parseDraft(D.serializeDraft(doc));
+      assert(back.chapters.length === doc.chapters.length, tpl.id + ' survives a save and reopen');
+    }
+    assert(TP.build(D, 'novel').chapters.length === 3 && TP.build(D, 'blank').chapters.length === 1, 'novel has three chapters, blank has one');
+    const art = TP.build(D, 'article');
+    assert(art.chapters[0].title === 'Abstract' && art.chapters.every((c) => c.nonum), 'a scientific article has named, unnumbered sections');
+    for (const v of Object.keys(WN)) {
+      assert(/^\d+\.\d+\.\d+$/.test(v), 'release note keys are versions (' + v + ')');
+      assert(WN[v].length <= 220 && !/\u2014/.test(WN[v]), 'release note for ' + v + ' is short and has no em dash');
+    }
+    console.log('ok templates and release notes');
+  }
+
+  {
+    // the Evening theme follows the sun: sunrise and sunset by season and time zone
+    const Sun = require('../shared/sun.js');
+    const at = (iso, tz) => Sun.isNight(new Date(iso), tz);
+    assert(!at('2026-06-21T20:00:00-04:00', 'America/Toronto') && at('2026-06-21T22:30:00-04:00', 'America/Toronto'), 'Toronto: still light at 8 pm in June, dark by 10:30 pm');
+    assert(at('2026-12-21T17:15:00-05:00', 'America/Toronto') && !at('2026-12-21T15:30:00-05:00', 'America/Toronto'), 'Toronto: dark by 5:15 pm in December, light at 3:30 pm');
+    assert(at('2026-12-21T07:00:00-05:00', 'America/Toronto') && !at('2026-12-21T08:45:00-05:00', 'America/Toronto'), 'Toronto: sunrise falls between 7 and 8:45 am in December');
+    assert(!at('2026-06-21T20:00:00+02:00', 'Europe/Madrid') && at('2026-06-21T23:00:00+02:00', 'Europe/Madrid'), 'Madrid in June');
+    assert(!at('2026-01-15T12:00:00+13:00', 'Pacific/Auckland') && at('2026-01-15T23:30:00+13:00', 'Pacific/Auckland') && !at('2026-01-15T20:00:00+13:00', 'Pacific/Auckland'), 'Auckland: southern summer evenings stay light');
+    assert(at('2026-03-10T03:00:00-04:00', 'America/Toronto') && !at('2026-03-10T13:00:00-04:00', 'America/Toronto'), 'night and day around the clock change');
+    assert(typeof Sun.isNight(new Date('2026-04-01T12:00:00Z'), 'Nowhere/Unknown') === 'boolean' && typeof Sun.isNight() === 'boolean', 'an unknown time zone still gives an answer');
+    assert(Sun.isNight(new Date('2026-12-21T12:00:00Z'), 'Europe/Helsinki') !== undefined, 'high latitudes do not break');
+    // every zone in the table is a real zone, and its coordinates sit near where its clock says (catches typos)
+    const stdHours = (z) => {
+      const off = (d) => { const m = /GMT([+-])(\d+)(?::(\d+))?/.exec(new Intl.DateTimeFormat('en-US', { timeZone: z, timeZoneName: 'shortOffset' }).formatToParts(d).find((p) => p.type === 'timeZoneName').value); return m ? (m[1] === '-' ? -1 : 1) * (+m[2] + (m[3] ? +m[3] / 60 : 0)) : 0; };
+      return Math.min(off(new Date(Date.UTC(2026, 0, 1))), off(new Date(Date.UTC(2026, 6, 1))));
+    };
+    let n = 0;
+    for (const z of Object.keys(Sun.ZONES)) {
+      let h;
+      try { h = stdHours(z); } catch (e) { assert(false, z + ' is a valid time zone'); }
+      const [lat, lon] = Sun.ZONES[z];
+      let diff = Math.abs(((lon - h * 15) % 360 + 540) % 360 - 180);
+      assert(lat >= -90 && lat <= 90 && diff <= 35, z + ' coordinates match its clock (' + lat + ', ' + lon + ', UTC' + h + ')');
+      n++;
+    }
+    assert(n >= 150, 'the table covers at least 150 zones (' + n + ')');
+    console.log('ok sunrise and sunset');
+  }
+
 })().catch((e) => { console.error('FAIL', e); process.exit(1); });

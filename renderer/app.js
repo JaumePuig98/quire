@@ -14,6 +14,7 @@
   /* ============================ state ============================ */
   const init = window.api.init();
   let prefs = init.prefs;
+  const appVersion = init.version || '';
   const DEFAULTS = init.defaults || {};
   let systemDark = init.systemDark;
   let doc = null;
@@ -55,6 +56,24 @@
     toast(lastCheer, ms || 3600);
   }
   function welcome() {
+    welcomed = true;
+    if (prefs.introSeen === false) { // first install only: one quiet pointer to the settings, never again
+      savePrefs({ introSeen: true, lastVersion: appVersion });
+      toast('Welcome to Quire. When you have a minute, open Settings (Ctrl+,) and set it up the way you like to write.', 9000);
+      return;
+    }
+    if (appVersion && prefs.lastVersion !== appVersion) { // after an update: the release note, once
+      savePrefs({ lastVersion: appVersion });
+      const note = window.WhatsNew && window.WhatsNew[appVersion];
+      if (note) { toast(note, 9000); return; }
+    }
+    if (resumeNote) { toast(resumeNote, 4200); resumeNote = ''; return; }
+    const pc = paceInfo();
+    if (pc && pc.per && localStorage.getItem('paceDay') !== todayKey()) { // the daily pace, once a day
+      try { localStorage.setItem('paceDay', todayKey()); } catch (e) { /* ignore */ }
+      toast(pc.short, 5200);
+      return;
+    }
     const h = new Date().getHours();
     const kind = h >= 5 && h < 12 ? 'morning' : h < 17 && h >= 12 ? 'afternoon' : h >= 17 && h < 22 ? 'evening' : 'night';
     cheer(kind, 4200);
@@ -95,7 +114,7 @@
     if (patch.readScope !== undefined && reading) renderChapter();
   }
   function applyPrefs() {
-    const dark = prefs.theme === 'dark' || (prefs.theme === 'system' && systemDark);
+    const dark = prefs.theme === 'dark' || (prefs.theme === 'system' && systemDark) || (prefs.theme === 'evening' && window.Sun.isNight());
     document.body.classList.toggle('dark', dark);
     document.body.dataset.font = prefs.font;
     document.body.classList.toggle('justify', prefs.justify !== false);
@@ -110,17 +129,28 @@
     const ac = ACCENTS[prefs.accent] || ACCENTS.amber;
     document.body.style.setProperty('--accent', dark ? ac.d : ac.l);
     document.body.style.setProperty('--accent-ink', dark ? ac.d : ac.ink); // darker on light backgrounds so text in the accent stays readable
-    document.body.style.setProperty('--glow', dark ? ac.gd : ac.gl);
-    const sw = $('.swatches');
-    if (sw && sw.children.length !== Object.keys(ACCENTS).length) {
-      sw.innerHTML = '';
-      Object.keys(ACCENTS).forEach((id) => {
-        const b = document.createElement('button');
-        b.type = 'button'; b.dataset.v = id; b.title = ACCENTS[id].name; b.setAttribute('aria-label', ACCENTS[id].name);
-        sw.appendChild(b);
-      });
+    // Two swatch groups: the accent color, and the color of the soft light (which can simply follow the accent).
+    $$('.swatches').forEach((sw) => {
+      const glowGroup = sw.dataset.pref === 'glowColor';
+      const ids = glowGroup ? ['accent'].concat(Object.keys(ACCENTS), ['white']) : Object.keys(ACCENTS);
+      if (sw.children.length !== ids.length) {
+        sw.innerHTML = '';
+        ids.forEach((id) => {
+          const b = document.createElement('button');
+          const name = id === 'accent' ? 'Match the accent color' : id === 'white' ? 'White' : ACCENTS[id].name;
+          b.type = 'button'; b.dataset.v = id; b.title = name; b.setAttribute('aria-label', name);
+          if (id === 'accent') b.classList.add('glowmatch'); else if (id === 'white') b.classList.add('glowwhite');
+          sw.appendChild(b);
+        });
+      }
+      $$('button', sw).forEach((b) => { const a = ACCENTS[b.dataset.v]; if (a) b.style.background = 'rgb(' + (glowGroup ? (dark ? a.gd : a.gl) : (dark ? a.d : a.l)) + ')'; });
+    });
+    {
+      const gc = prefs.glowColor;
+      const g = gc === 'white' ? '255 255 255' : (ACCENTS[gc] && gc !== 'accent') ? (dark ? ACCENTS[gc].gd : ACCENTS[gc].gl) : (dark ? ac.gd : ac.gl);
+      document.body.style.setProperty('--glow', g);
+      document.body.style.setProperty('--glow-k', String(Math.max(0, Math.min(200, prefs.glowStrength == null ? 100 : prefs.glowStrength)) / 100));
     }
-    if (sw) $$('button', sw).forEach((b) => { const a = ACCENTS[b.dataset.v]; b.style.background = 'rgb(' + (dark ? a.d : a.l) + ')'; });
     root.style.setProperty('--fs', prefs.size + 'px');
     const oneWeight = prefs.font === 'type'; // Courier Prime comes in a single weight
     root.style.setProperty('--fw', oneWeight ? 400 : (prefs.weight || 400));
@@ -135,6 +165,9 @@
     root.style.setProperty('--qg', (prefs.quoteGap != null ? prefs.quoteGap : 0.9) + 'em');
     root.style.setProperty('--anchor', prefs.anchor);
     document.body.classList.toggle('nofade', !prefs.fade);
+    document.body.style.setProperty('--fade-k', String(Math.max(20, Math.min(100, prefs.fadeReach == null ? 100 : prefs.fadeReach)) / 100));
+    document.body.dataset.caret = prefs.caret === 'block' || prefs.caret === 'underline' ? prefs.caret : 'bar';
+    document.body.classList.toggle('noblink', prefs.caretBlink === false);
     document.body.classList.toggle('noglow', !prefs.glow);
     // settings panel
     $$('[data-pref]').forEach((el) => {
@@ -147,6 +180,7 @@
     const stn = $('#streakNote');
     if (stn) { const st = prefs.streak || {}; stn.textContent = prefs.goal > 0 ? 'Streak: ' + streakNow() + (streakNow() === 1 ? ' day' : ' days') + ' in a row' + (st.best > 1 ? ' (best ' + st.best + ')' : '') + '. A day counts when you reach the daily goal.' : 'Set a daily goal to start a streak.'; }
     $$('[data-reset]').forEach((b) => { b.classList.toggle('show', DEFAULTS[b.dataset.reset] !== undefined && prefs[b.dataset.reset] !== DEFAULTS[b.dataset.reset]); });
+    if (typeof updatePace === 'function') updatePace();
     kick(false);
     applyFocus();
     if (reading) layoutGutter();
@@ -270,16 +304,44 @@
   }
 
   /* ============================ loading / saving ============================ */
+  /* ---- where you left off: the last chapter and caret place of each book ---- */
+  let welcomed = false, resumeNote = '';
+  function resumeLoad(path) { try { return (JSON.parse(localStorage.getItem('resume') || '{}'))[path] || null; } catch (e) { return null; } }
+  function resumeSave() {
+    if (!filePath || !doc || reading || document.activeElement !== editor) return;
+    const cp = caretPos();
+    if (!cp) return;
+    try {
+      const m = JSON.parse(localStorage.getItem('resume') || '{}');
+      m[filePath] = { cid: doc.chapters[cur].id, pos: cp.f, t: Date.now() };
+      const keys = Object.keys(m);
+      if (keys.length > 40) keys.sort((a, b) => m[a].t - m[b].t).slice(0, keys.length - 40).forEach((k) => delete m[k]);
+      localStorage.setItem('resume', JSON.stringify(m));
+    } catch (e) { /* storage unavailable: just open at the end next time */ }
+  }
+  let resumeTimer;
+  const resumeSoon = () => { clearTimeout(resumeTimer); resumeTimer = setTimeout(resumeSave, 1200); };
   function loadDoc(d, path, opts) {
     opts = opts || {};
     doc = d;
-    cur = 0;
+    let resumeAt = null;
+    if (opts.resume && path && !readingBook()) {
+      const r = resumeLoad(path);
+      const i = r ? d.chapters.findIndex((c) => c.id === r.cid) : -1;
+      if (i >= 0) resumeAt = { i, pos: r.pos };
+    }
+    cur = resumeAt ? resumeAt.i : 0;
+    nameCache.t = 0;
     filePath = path || null;
     histories.clear();
     wordCounts = doc.chapters.map((c) => D.countWords(c.blocks));
     renderChapter();
     dirty = !!opts.dirty;
-    if (!reading) { editor.focus(); placeCaretAtEnd(); kick(true); }
+    if (!reading) { editor.focus(); if (resumeAt) placeCaretPos({ a: resumeAt.pos, f: resumeAt.pos }); else placeCaretAtEnd(); kick(true); }
+    if (resumeAt) {
+      const msg = doc.chapters.length > 1 ? 'Back where you stopped, in ' + chapterName(doc.chapters[cur]) + '.' : 'Back where you stopped.';
+      if (welcomed) toast(msg, 3200); else resumeNote = msg;
+    }
     renderOutline();
     $('#docTitle').value = doc.title || '';
     $('#docAuthor').value = doc.author || '';
@@ -302,7 +364,7 @@
     if (r.error) { await window.api.error(r.error); return; }
     try {
       const p = parseByExtension(r.path, r.text);
-      loadDoc(p.doc, p.path, { dirty: !!p.imported });
+      loadDoc(p.doc, p.path, { dirty: !!p.imported, resume: true });
       if (p.imported) toast('Imported. Save to keep it as a .draft file.');
       setTimeout(checkCompanion, 600);
     } catch (e) {
@@ -442,11 +504,35 @@
     if (c === 0) return save('save');
     return c === 1;
   }
+  /* ---- new book: blank or a starting structure ---- */
+  let tplDone = null;
+  function pickTemplate() {
+    return new Promise((resolve) => {
+      const dlg = $('#tplDlg'), list = $('#tplList');
+      list.innerHTML = '';
+      const finish = (t) => { dlg.hidden = true; tplDone = null; resolve(t); };
+      window.Templates.list.forEach((t) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.innerHTML = '<strong></strong><small></small>';
+        b.firstChild.textContent = t.name;
+        b.lastChild.textContent = t.desc;
+        b.addEventListener('click', () => finish(t));
+        list.appendChild(b);
+      });
+      tplDone = finish;
+      dlg.hidden = false;
+      list.firstChild.focus();
+    });
+  }
+  $('#tplCancel').addEventListener('click', () => { if (tplDone) tplDone(null); });
   async function doNew() {
     if (!(await confirmDiscard())) return;
+    const t = await pickTemplate();
+    if (!t) { if (!reading) editor.focus(); return; }
     if (filePath) await autosave();
     window.api.recoveryClear();
-    loadDoc(D.newDoc(), null);
+    loadDoc(window.Templates.build(D, t.id), null);
   }
   async function doOpen() {
     if (!(await confirmDiscard())) return;
@@ -466,6 +552,87 @@
       localStorage.setItem('goal', JSON.stringify(g));
     } catch (e) { /* ignore */ }
   }
+
+  /* ============================ writing calendar and pace ============================ */
+  function daysLoad() { try { return JSON.parse(localStorage.getItem('days') || '{}'); } catch (e) { return {}; } }
+  // Words written today, kept per day (and per book) so the calendar can show the last weeks.
+  function logDay() {
+    if (!doc) return;
+    try {
+      const days = daysLoad(), t = todayKey(), key = filePath || 'untitled';
+      const net = wordsToday();
+      if (net <= 0 && !(days[t] && days[t][key])) return;
+      days[t] = Object.assign(days[t] || {}, { [key]: net });
+      const keys = Object.keys(days).sort();
+      keys.slice(0, Math.max(0, keys.length - 400)).forEach((k) => delete days[k]);
+      localStorage.setItem('days', JSON.stringify(days));
+    } catch (e) { /* storage unavailable: the calendar just stays empty */ }
+  }
+  const dayTotal = (d) => Object.keys(d || {}).reduce((a, k) => a + (d[k] || 0), 0);
+  function renderDayGrid() {
+    const grid = $('#dayGrid');
+    if (!grid) return;
+    const days = daysLoad();
+    const WEEKS = 12;
+    const dow = (new Date().getDay() + 6) % 7; // Monday is the first row
+    const cells = [];
+    let max = 0, last7 = 0, best = 0, bestKey = '';
+    for (let w = 0; w < WEEKS; w++) {
+      for (let d = 0; d < 7; d++) {
+        const off = (w - (WEEKS - 1)) * 7 + (d - dow);
+        if (off > 0) { cells.push({ off, fut: true }); continue; }
+        const k = dayKey(off), n = dayTotal(days[k]);
+        cells.push({ off, k, n });
+        max = Math.max(max, n);
+        if (off > -7) last7 += n;
+        if (n > best) { best = n; bestKey = k; }
+      }
+    }
+    const ref = prefs.goal > 0 ? prefs.goal : Math.max(200, max);
+    const fmt = (k) => { const p = k.split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }); };
+    grid.innerHTML = '';
+    cells.forEach((c) => {
+      const i = document.createElement('i');
+      i.setAttribute('aria-hidden', 'true');
+      if (c.fut) i.className = 'fut';
+      else {
+        const lvl = c.n <= 0 ? 0 : c.n >= ref ? 4 : c.n >= ref * 0.5 ? 3 : c.n >= ref * 0.25 ? 2 : 1;
+        i.className = (lvl ? 'l' + lvl : '') + (c.off === 0 ? ' today' : '');
+        i.title = fmt(c.k) + ': ' + c.n.toLocaleString() + (c.n === 1 ? ' word' : ' words');
+      }
+      grid.appendChild(i);
+    });
+    const note = best > 0 ? 'Last 7 days: ' + last7.toLocaleString() + ' words. Best day: ' + best.toLocaleString() + ' words on ' + fmt(bestKey) + '.' : 'Nothing logged yet. The days you write will fill in here.';
+    $('#dayNote').textContent = note;
+    grid.setAttribute('aria-label', 'Writing calendar, last twelve weeks. ' + note);
+  }
+  // How many words a day it takes to reach the book target by the finish date.
+  function paceInfo() {
+    const target = prefs.bookGoal, by = prefs.finishBy;
+    if (!(target > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(by || '')) return null;
+    const p = by.split('-').map(Number);
+    const end = new Date(p[0], p[1] - 1, p[2]);
+    const t0 = new Date();
+    const today = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate());
+    const left = Math.round((end - today) / 864e5) + 1; // today counts
+    const remaining = target - totalWords();
+    const dateText = end.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    if (remaining <= 0) return { done: true, text: 'You have reached your target.' };
+    if (left < 1) return { late: true, text: 'The finish date has passed. ' + remaining.toLocaleString() + ' words to go.' };
+    const per = Math.ceil(remaining / left);
+    return {
+      per,
+      text: 'About ' + per.toLocaleString() + ' words a day to reach ' + target.toLocaleString() + ' by ' + dateText + ' (' + left + (left === 1 ? ' day' : ' days') + ' left, ' + remaining.toLocaleString() + ' to go).',
+      short: 'To finish by ' + dateText + ', about ' + per.toLocaleString() + ' words a day.',
+    };
+  }
+  function updatePace() {
+    const n = $('#paceNote');
+    if (!n) return;
+    const pc = paceInfo();
+    n.textContent = pc ? pc.text : (prefs.finishBy && !(prefs.bookGoal > 0) ? 'Set a book target above to see the daily pace.' : '');
+  }
+
   const sessionBase = {};
   function sessionWords() { const k = filePath || 'untitled'; if (sessionBase[k] === undefined) sessionBase[k] = totalWords(); return Math.max(0, totalWords() - sessionBase[k]); }
   // A day counts when the daily goal is reached; the streak is the run of such days in a row.
@@ -499,6 +666,7 @@
       const goal = doc && doc.chapters[cur] && doc.chapters[cur].goal;
       if (goal > 0 && was < goal && wordCounts[cur] >= goal && wordCounts[cur] - was < 50) cheerOnce('ch' + doc.chapters[cur].id, 'chapter'); // typed across the line, not opened already past it
       updateStatus();
+      logDay();
     }, 250);
   }
   function updateStatus() {
@@ -518,9 +686,177 @@
       const sn = streakNow();
       if (sn >= 2) parts.push(sn + ' day streak');
     }
+    const ph = placeholderCount();
+    if (ph) parts.push(ph + ' to fill');
+    if (sprint) parts.push(sprint.last ? 'sprint: last minute' : 'sprint');
     $('#statusLeft').textContent = parts.join(' · ');
     updateBookTotal();
   }
+
+
+  /* ============================ placeholders: TK and [[ ]] ============================ */
+  // Type TK or [[what you need]] where you do not know something, keep writing, and come back with Ctrl+J.
+  const PH_RE = /\bTK\b|\[\[[^\]\n]*\]\]/g;
+  const phCount = (t) => { const m = t.match(PH_RE); return m ? m.length : 0; };
+  const phTextOf = (c) => c.blocks.map((b) => D.blockText(b)).join('\n');
+  const phCache = new WeakMap();
+  function placeholderCount() {
+    if (!doc) return 0;
+    let n = 0;
+    doc.chapters.forEach((c, i) => {
+      if (i === cur && !reading) { n += phCount(editor.innerText); return; }
+      let v = phCache.get(c.blocks);
+      if (v === undefined) { v = phCount(phTextOf(c)); phCache.set(c.blocks, v); }
+      n += v;
+    });
+    return n;
+  }
+  function phMatches() {
+    const out = [];
+    Array.prototype.forEach.call(editor.children, (blk, b) => {
+      const t = blk.textContent;
+      PH_RE.lastIndex = 0;
+      let m;
+      while ((m = PH_RE.exec(t))) out.push({ b, s: m.index, e: m.index + m[0].length });
+    });
+    return out;
+  }
+  function phSelect(m) {
+    const rg = rangeAt(editor.children[m.b], m.s, m.e);
+    if (!rg) return false;
+    editor.focus();
+    const sel = getSelection();
+    sel.removeAllRanges(); sel.addRange(rg);
+    kick(true);
+    return true;
+  }
+  function jumpPlaceholder(dir) {
+    if (!doc || reading) return;
+    dir = dir < 0 ? -1 : 1;
+    syncFromDom();
+    if (!placeholderCount()) { toast('Nothing left to fill in. Type TK or [[ ]] where you need to come back.', 3200); return; }
+    const cp = caretPos();
+    const lo = cp ? (cp.a.b < cp.f.b || (cp.a.b === cp.f.b && cp.a.o <= cp.f.o) ? cp.a : cp.f) : { b: 0, o: 0 };
+    const hi = cp ? (lo === cp.a ? cp.f : cp.a) : { b: 0, o: 0 };
+    const here = phMatches();
+    const after = (m) => m.b > hi.b || (m.b === hi.b && m.s >= hi.o);
+    const before = (m) => m.b < lo.b || (m.b === lo.b && m.e <= lo.o);
+    let pick = dir > 0 ? here.find(after) : here.slice().reverse().find(before);
+    if (pick) { phSelect(pick); return; }
+    const n = doc.chapters.length;
+    for (let step = 1; step <= n; step++) {
+      const j = ((cur + dir * step) % n + n) % n;
+      if (j === cur) { if (here.length) phSelect(dir > 0 ? here[0] : here[here.length - 1]); return; }
+      if (phCount(phTextOf(doc.chapters[j])) > 0) {
+        selectChapter(j);
+        const ms = phMatches();
+        if (ms.length) phSelect(dir > 0 ? ms[0] : ms[ms.length - 1]);
+        return;
+      }
+    }
+  }
+
+  /* ============================ name suggestions: Tab completes a name that keeps coming up ============================ */
+  const nameCache = { t: 0, list: [] };
+  function buildNames() {
+    const counts = new Map();
+    const scan = (t) => {
+      const re = /(?<![\p{L}\p{N}'’])\p{Lu}\p{L}{5,}(?![\p{L}])/gu;
+      let m;
+      while ((m = re.exec(t))) {
+        const before = t.slice(Math.max(0, m.index - 4), m.index).trimEnd();
+        if (!before || !/[\p{Ll},;:\u2013\u2014-]$/u.test(before)) continue; // sentence starts do not count: that is just a capital letter
+        counts.set(m[0], (counts.get(m[0]) || 0) + 1);
+      }
+    };
+    doc.chapters.forEach((c, i) => scan(i === cur && !reading ? editor.innerText : phTextOf(c)));
+    nameCache.list = Array.from(counts.entries()).filter((e) => e[1] >= 3).sort((a, b) => b[1] - a[1]).map((e) => e[0]);
+    nameCache.t = Date.now();
+  }
+  let nameTip = null; // { node, off, add }
+  function nameHide() { nameTip = null; $('#nameHint').hidden = true; }
+  function nameHintCheckMoved() {
+    if (!nameTip) return;
+    const sel = getSelection();
+    if (!sel.isCollapsed || sel.anchorNode !== nameTip.node || sel.anchorOffset !== nameTip.off) nameHide();
+  }
+  function nameHintUpdate() {
+    nameHide();
+    if (prefs.names === false || reading || !doc) return;
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed || sel.anchorNode.nodeType !== 3 || !editor.contains(sel.anchorNode)) return;
+    const text = sel.anchorNode.nodeValue;
+    if (/\p{L}/u.test(text.charAt(sel.anchorOffset))) return; // the caret is inside a word
+    const m = /(?:^|[^\p{L}\p{N}'’])(\p{Lu}\p{L}{2,})$/u.exec(text.slice(0, sel.anchorOffset));
+    if (!m) return;
+    if (Date.now() - nameCache.t > 20000) buildNames();
+    const prefix = m[1];
+    const full = nameCache.list.find((w) => w.length > prefix.length && w.startsWith(prefix));
+    if (!full) return;
+    const h = $('#nameHint');
+    h.innerHTML = 'Tab for <b></b>';
+    h.querySelector('b').textContent = full;
+    h.hidden = false;
+    nameTip = { node: sel.anchorNode, off: sel.anchorOffset, add: full.slice(prefix.length) };
+    nameHintPlace();
+  }
+  // Under the caret as it is drawn: while typing the line slides sideways, so this follows the drawn caret and not the real one.
+  function nameHintPlace() {
+    if (!nameTip) return;
+    const h = $('#nameHint');
+    const r = caretEl && liveEl ? caretEl.getBoundingClientRect() : caretRect();
+    if (!r) return;
+    const left = r.left, bottom = r.bottom != null ? r.bottom : (r.top || 0) + (r.height || 24);
+    h.style.left = Math.max(8, Math.min(innerWidth - h.offsetWidth - 8, left)) + 'px';
+    h.style.top = Math.min(innerHeight - h.offsetHeight - 8, bottom + 6) + 'px';
+  }
+  editor.addEventListener('blur', nameHide);
+  editor.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || !nameTip || e.isComposing) return;
+    e.preventDefault();
+    const add = nameTip.add;
+    nameHide();
+    document.execCommand('insertText', false, add);
+  });
+
+  /* ============================ sprints ============================ */
+  let sprint = null; // { end, mins, base, started, timer, last }
+  function recountNow() {
+    if (reading) return;
+    const t = editor.innerText.trim();
+    wordCounts[cur] = t ? t.split(/\s+/).length : 0;
+  }
+  function sprintUI() { const b = $('#btnSprint'); if (b) b.textContent = sprint ? 'Stop' : 'Start'; }
+  const wordsLabel = (n) => n.toLocaleString() + (n === 1 ? ' word' : ' words');
+  function endSprint(early) {
+    if (!sprint) return;
+    clearInterval(sprint.timer);
+    const s = sprint;
+    sprint = null;
+    recountNow();
+    const w = Math.max(0, totalWords() - s.base);
+    const mins = Math.max(1, Math.round((Date.now() - s.started) / 60000));
+    toast(early ? 'Sprint stopped. ' + wordsLabel(w) + ' in ' + mins + (mins === 1 ? ' minute.' : ' minutes.') : 'Time. ' + wordsLabel(w) + ' in ' + s.mins + ' minutes. Nicely done.', 6500);
+    sprintUI(); updateStatus();
+  }
+  function startSprint() {
+    if (!doc) return;
+    if (sprint) { endSprint(true); return; }
+    const mins = Math.max(1, parseInt(prefs.sprintMin, 10) || 20);
+    recountNow();
+    sprint = { mins, started: Date.now(), end: Date.now() + mins * 60000, base: totalWords(), last: false, timer: 0 };
+    sprint.timer = setInterval(() => {
+      if (!sprint) return;
+      const left = sprint.end - Date.now();
+      if (left <= 0) { endSprint(false); return; }
+      if (left <= 60000 && !sprint.last) { sprint.last = true; updateStatus(); }
+    }, 1000);
+    closePanels();
+    toast('Sprint started: ' + mins + ' minutes. Just write.', 3200);
+    sprintUI(); updateStatus();
+    if (!reading) editor.focus();
+  }
+  $('#btnSprint').addEventListener('click', startSprint);
 
   /* ============================ typewriter engine ============================ */
   let follow = false;
@@ -671,7 +1007,9 @@
     caretEl.style.left = (r.left - lr.left) + 'px';
     caretEl.style.top = (r.top - lr.top) + 'px';
     caretEl.style.height = r.height + 'px';
+    if (prefs.caret === 'underline') { caretEl.style.height = '2px'; caretEl.style.top = (r.top - lr.top + r.height - 3) + 'px'; }
     wrapEl.style.transform = shiftX ? 'translateX(' + Math.round(shiftX) + 'px)' : '';
+    if (nameTip) nameHintPlace();
   }
   // Centering is for writing new text: the caret has to be at the end of its paragraph (not in the middle of older text).
   function atWritingEnd() {
@@ -1348,6 +1686,7 @@
   }
   function setReading(on) {
     if (on === reading) return;
+    speakStop();
     if (on && review) setReview(false);
     if (on) syncFromDom();
     reading = on;
@@ -1368,12 +1707,50 @@
     }
   }
 
+
+  /* ============================ read aloud (reading mode) ============================ */
+  let speaking = null; // { items, i }
+  function speakStop() {
+    if (speaking) { speaking = null; try { window.speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
+    const b = $('#readListen');
+    if (b) b.textContent = 'Listen';
+  }
+  function speakStart() {
+    if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') { toast('This computer has no speech voices to read with.', 3600); return; }
+    const items = Array.prototype.filter.call(editor.children, (el) => el.textContent.trim());
+    if (!items.length) return;
+    // start where you are reading: the first paragraph that is still on screen
+    let i = items.findIndex((el) => el.getBoundingClientRect().bottom > 90);
+    if (i < 0) i = 0;
+    const s = { items, i };
+    speaking = s;
+    $('#readListen').textContent = 'Stop';
+    const step = () => {
+      if (speaking !== s) return;
+      if (s.i >= s.items.length) { speakStop(); return; }
+      const el = s.items[s.i++];
+      try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { /* ignore */ }
+      const u = new SpeechSynthesisUtterance(el.textContent.trim());
+      u.onend = step;
+      u.onerror = (ev) => {
+        if (ev && (ev.error === 'interrupted' || ev.error === 'canceled')) return;
+        speakStop();
+        toast('Could not read aloud. Check that Windows has a speech voice installed.', 4200);
+      };
+      window.speechSynthesis.speak(u);
+    };
+    step();
+  }
+  $('#readListen').addEventListener('click', () => { if (speaking) speakStop(); else speakStart(); });
+
   /* ============================ chapters ============================ */
   function selectChapter(i) {
     if (i < 0 || i >= doc.chapters.length || (i === cur && !readingBook())) return;
+    speakStop();
     commitHistory();
     syncFromDom();
     cur = i;
+    nameCache.t = 0;
     renderChapter();
     renderOutline();
     updateStatus();
@@ -1576,7 +1953,7 @@
       opts: { notes: $('#exportNotes').value !== 'off', notesMode: $('#exportNotes').value, pageSize: $('#exportPage').value, margins: $('#exportMargins').value, lang: (prefs.spellLangs && prefs.spellLangs[0]) || navigator.language || 'en', font: prefs.font, justify: prefs.justify !== false, author: doc.author || undefined, titlePage: wantTitlePage(), pageNumbers: prefs.pageNumbers !== false, chapterIds: exportSel ? [...exportSel] : undefined },
     });
     if (r && r.error) await window.api.error('Export failed: ' + r.error);
-    else if (r && r.path) toast('Exported to ' + baseName(r.path));
+    else if (r && r.path) { const ph = placeholderCount(); toast('Exported to ' + baseName(r.path) + (ph ? '. Heads up: ' + ph + ' to fill still in the text.' : ''), ph ? 5200 : undefined); }
     if (!reading) editor.focus();
   }
   async function saveNamedVersion() {
@@ -1817,7 +2194,7 @@
     ['#exportMenu', '#settings'].forEach((s) => ($(s).hidden = true));
     $('#outline').hidden = true;
   }
-  const anyPanelOpen = () => ['#exportMenu', '#settings', '#outline', '#notePop', '#modal', '#cmpDlg', '#fileDlg'].some((s) => !$(s).hidden);
+  const anyPanelOpen = () => ['#exportMenu', '#settings', '#outline', '#notePop', '#modal', '#cmpDlg', '#fileDlg', '#tplDlg'].some((s) => !$(s).hidden);
   function placePopover(pop, btn, align) {
     const b = btn.getBoundingClientRect();
     const w = pop.offsetWidth;
@@ -1834,7 +2211,7 @@
     if (!open) {
       showChrome();
       if (btnSel && sel !== '#settings') placePopover($(sel), $(btnSel), align);
-      if (sel === '#settings') { const f = $('#settings .st-nav button.on'); if (f) f.focus({ preventScroll: true }); }
+      if (sel === '#settings') { renderDayGrid(); updatePace(); const f = $('#settings .st-nav button.on'); if (f) f.focus({ preventScroll: true }); }
       else if (sel === '#exportMenu') { renderExportChapters(); const f = $(sel).querySelector('button,input,select'); if (f) f.focus({ preventScroll: true }); }
     } else if (!reading) editor.focus();
   }
@@ -1853,13 +2230,21 @@
   function hideChrome() { if (!anyPanelOpen() && !$('#topbar').contains(document.activeElement)) document.body.classList.add('idle'); }
 
   /* ============================ events ============================ */
-  document.addEventListener('mousemove', showChrome);
+  // The pointer hides while you type and comes back when you move it.
+  let ptrX = -1, ptrY = -1;
+  document.addEventListener('mousemove', (e) => {
+    if (Math.abs(e.clientX - ptrX) + Math.abs(e.clientY - ptrY) >= 4) document.body.classList.remove('ptrhide');
+    ptrX = e.clientX; ptrY = e.clientY;
+    showChrome();
+  });
+  document.addEventListener('mousedown', () => document.body.classList.remove('ptrhide'));
   document.addEventListener('keydown', (e) => {
     const ctrl = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     if (!ctrl && !e.altKey && (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace')) {
       hideChrome();
       document.body.classList.add('typing');
+      if (document.activeElement === editor) document.body.classList.add('ptrhide');
     }
     if (e.key === 'F11') { e.preventDefault(); window.api.toggleFullscreen(); return; }
     if (e.key === 'F10') { e.preventDefault(); showChrome(); $('#btnChapters').focus(); return; } // the menu bar by keyboard
@@ -1868,6 +2253,7 @@
       if (activeNote && !$('#notePop').hidden) { e.preventDefault(); closeNotePop(false); return; }
       if (!fb.hidden) { e.preventDefault(); closeFind(); return; }
       if (!$('#fileDlg').hidden) return;
+      if (!$('#tplDlg').hidden) { if (tplDone) tplDone(null); return; }
       if (!$('#cmpDlg').hidden) { closeCompare('later'); return; }
       if (!$('#modal').hidden) { $('#modal').hidden = true; return; }
       if (anyPanelOpen()) { e.preventDefault(); closePanels(); if (!reading) editor.focus(); }
@@ -1904,6 +2290,8 @@
       case ',': e.preventDefault(); toggle('#settings', '#btnSettings', 'right'); break;
       case '/': e.preventDefault(); savePrefs({ fmtbar: prefs.fmtbar === false }); break;
       case 'enter': if (shift) { e.preventDefault(); insertBreak(); } break;
+      case 'j': e.preventDefault(); jumpPlaceholder(shift ? -1 : 1); break;
+      case 't': if (shift) { e.preventDefault(); startSprint(); } break;
       case 'pagedown': e.preventDefault(); selectChapter(cur + 1); break;
       case 'pageup': e.preventDefault(); selectChapter(cur - 1); break;
       default: break;
@@ -2034,13 +2422,14 @@
     scheduleHistory();
     if (!editor.firstChild || editor.innerHTML === '<br>') { editor.innerHTML = '<p><br></p>'; placeCaretAtEnd(); }
     markDirty(); scheduleCount(); kick(true, true); layoutMarks(); refreshFindSoon();
+    if (e.inputType === 'insertText' && !e.isComposing) nameHintUpdate(); else nameHide();
   });
   editor.addEventListener('keyup', (e) => {
     if (/^(Arrow|Page|Home|End)/.test(e.key)) kick(true);
   });
   document.addEventListener('selectionchange', () => {
     if (liveEl && (!editor.contains(liveEl) || currentBlock() !== liveEl)) setLive(null);
-    updateActive(); kick(false); applyFocus();
+    updateActive(); kick(false); applyFocus(); resumeSoon(); nameHintCheckMoved();
   });
   // Pasted formatted text keeps only what the page itself has: bold, italic, underline, headings and quotes.
   // Returns HTML to insert, or '' when the clipboard holds nothing but plain text (then the plain path is used).
@@ -2302,6 +2691,7 @@
       el.addEventListener('keydown', (e) => { if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') { on(); clearTimeout(t); t = setTimeout(off, 900); } });
       window.addEventListener('mouseup', off); el.addEventListener('lostpointercapture', off);
     }
+    else if (el.type === 'date') el.addEventListener('change', () => savePrefs({ [k]: el.value || '' }));
     else if (el.type === 'number') el.addEventListener('change', () => savePrefs({ [k]: Math.max(0, +el.value || 0) }));
   });
   $$('[data-num]').forEach((el) => {
@@ -2321,7 +2711,7 @@
     el.addEventListener('focus', () => el.select());
   });
   $$('[data-reset]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.reset; savePrefs({ [k]: DEFAULTS[k] }); }));
-  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'richPaste', 'weight', 'size', 'measure', 'lineHeight', 'paraGap', 'indent', 'headBefore', 'headAfter', 'quoteGap', 'anchor', 'typewriter', 'centerMode', 'focus', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'showSession', 'autoUpdate', 'smartQuotes', 'friendly', 'companion'];
+  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'richPaste', 'weight', 'size', 'measure', 'lineHeight', 'paraGap', 'indent', 'headBefore', 'headAfter', 'quoteGap', 'anchor', 'typewriter', 'centerMode', 'focus', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'showSession', 'autoUpdate', 'smartQuotes', 'friendly', 'companion', 'glowStrength', 'glowColor', 'caret', 'caretBlink', 'fadeReach', 'names', 'sprintMin'];
   $('#resetAll').addEventListener('click', () => {
     const patch = {};
     RESETTABLE.forEach((k) => { if (DEFAULTS[k] !== undefined) patch[k] = DEFAULTS[k]; });
@@ -2331,8 +2721,10 @@
 
   // From the main process
   window.api.onSystemTheme((dark) => { systemDark = dark; applyPrefs(); });
+  setInterval(() => { if (prefs.theme === 'evening') applyPrefs(); }, 60000); // the evening theme follows the clock
   window.api.onOpenFile(async (r) => { if (await confirmDiscard()) { if (filePath && dirty) await autosave(); openResult(r); } });
   window.api.onFlush(async () => {
+    resumeSave();
     try { await autosave(); } finally { window.api.closeNow(); }
   });
 
@@ -2343,7 +2735,7 @@
     if (init.open && !init.open.error) {
       try {
         const p = parseByExtension(init.open.path, init.open.text);
-        loadDoc(p.doc, p.path, { dirty: !!p.imported });
+        loadDoc(p.doc, p.path, { dirty: !!p.imported, resume: true });
         return;
       } catch (e) { /* fall through to a blank page */ }
     } else if (init.recovery) {
@@ -2356,5 +2748,5 @@
   kick(true);
 
   // exposed for tests
-  window.__app = { checkCompanion, cheer, openCompare, openResult, savePrefs, get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
+  window.__app = { paceInfo, renderDayGrid, logDay, whatsNew: window.WhatsNew, appVersion, welcome, jumpPlaceholder, placeholderCount, startSprint, get sprint() { return sprint; }, loadDoc, resumeSave, nameHintUpdate, get nameTip() { return nameTip; }, checkCompanion, cheer, openCompare, openResult, savePrefs, get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
 })();

@@ -419,6 +419,192 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       ok(cheers.on.length > 10 && !cheers.on.includes('\u2014'), 'a cheer shows a short friendly message (' + cheers.on + ')');
       ok(cheers.off === '', 'Friendly messages off shows nothing');
     }
+    // the soft light at the writing line: strength and color
+    {
+      const g = await page.evaluate(() => {
+        const A = window.__app, cs = () => getComputedStyle(document.body);
+        A.savePrefs({ theme: 'dark', accent: 'amber', glowStrength: 100, glowColor: 'accent' });
+        const base = { k: cs().getPropertyValue('--glow-k').trim(), c: cs().getPropertyValue('--glow').trim() };
+        A.savePrefs({ glowStrength: 200, glowColor: 'rose' });
+        const strong = { k: cs().getPropertyValue('--glow-k').trim(), c: cs().getPropertyValue('--glow').trim() };
+        A.savePrefs({ glowColor: 'white', glowStrength: 0 });
+        const off = { k: cs().getPropertyValue('--glow-k').trim(), c: cs().getPropertyValue('--glow').trim() };
+        A.savePrefs({ glowStrength: 100, glowColor: 'accent' });
+        return { base, strong, off, swatches: document.querySelectorAll('[data-pref=glowColor] button').length };
+      });
+      ok(g.base.k === '1' && g.strong.k === '2' && g.off.k === '0', 'light strength scales the glow (' + g.base.k + ', ' + g.strong.k + ', ' + g.off.k + ')');
+      ok(g.base.c !== g.strong.c && g.off.c === '255 255 255', 'light color changes the glow');
+      ok(g.swatches === 8, 'the light color offers match-accent, six colors and white (' + g.swatches + ')');
+    }
+
+    /* ---- writing flow: placeholders, resume, names, sprint, caret, pointer, evening theme ---- */
+    {
+      const mk = (chapters) => { const d = D.newDoc(); d.chapters = chapters.map((t, i) => ({ id: 'w' + i, title: 'Part ' + (i + 1), blocks: t.split('\n').map((x) => ({ t: 'p', runs: [{ text: x }] })) })); return JSON.parse(JSON.stringify(d)); };
+      const sel = () => page.evaluate(() => getSelection().toString());
+      await page.evaluate((d) => window.__app.loadDoc(d, null), mk(['We met in TK and then [[the name]] left.', 'Later TK again.']));
+      await page.waitForTimeout(500);
+      ok(await page.evaluate(() => window.__app.placeholderCount()) === 3, 'placeholders are counted across the book');
+      ok((await page.textContent('#statusLeft')).includes('3 to fill'), 'the status line shows how many are left');
+      await page.click('#editor'); await page.keyboard.press('Control+Home');
+      await page.keyboard.press('Control+j'); ok(await sel() === 'TK', 'Ctrl+J selects the first placeholder (' + await sel() + ')');
+      await page.keyboard.press('Control+j'); ok(await sel() === '[[the name]]', 'Ctrl+J goes to the next one');
+      await page.keyboard.press('Control+j'); await page.waitForTimeout(150);
+      ok(await sel() === 'TK' && (await page.textContent('#editor')).includes('Later'), 'Ctrl+J crosses into the next chapter');
+      await page.keyboard.press('Control+j'); await page.waitForTimeout(150);
+      ok(await sel() === 'TK' && (await page.textContent('#editor')).includes('We met'), 'Ctrl+J wraps around to the start');
+      await page.keyboard.press('Control+Shift+j'); await page.waitForTimeout(150);
+      ok((await page.textContent('#editor')).includes('Later'), 'Ctrl+Shift+J goes back');
+      await page.keyboard.type('Rome'); 
+      ok(await page.evaluate(() => window.__app.placeholderCount()) === 2, 'typing over a placeholder fills it');
+      await page.waitForTimeout(100);
+
+      // where you left off
+      const P = path.join(tmp, 'resume-test.draft');
+      const rd = mk(['First part text.', 'Second part text here.']);
+      await page.evaluate(([d, p]) => { window.__app.loadDoc(d, p); window.__app.selectChapter(1); window.__app.resumeSave(); }, [rd, P]);
+      await page.evaluate(([d, p]) => window.__app.loadDoc(d, p, { resume: true }), [rd, P]);
+      await page.waitForTimeout(300);
+      ok((await page.textContent('#editor')).includes('Second part'), 'a book reopens in the chapter you were writing in');
+      ok((await page.textContent('#toast')).includes('Back where you stopped'), 'a short note says where you are');
+      await page.evaluate(([d, p]) => window.__app.loadDoc(d, p, {}), [rd, P]);
+      ok((await page.textContent('#editor')).includes('First part'), 'without resume the first chapter opens');
+
+      // names: Tab completes a name that keeps coming up
+      await page.evaluate((d) => window.__app.loadDoc(d, null), mk(['She called to Esperanza, and Esperanza answered. Then Esperanza laughed.', '']));
+      await page.click('#editor'); await page.keyboard.press('Control+End');
+      await page.keyboard.type('We asked Espe'); await page.waitForTimeout(150);
+      ok(await page.isVisible('#nameHint') && (await page.textContent('#nameHint')).includes('Esperanza'), 'a frequent name is offered after a few letters');
+      await page.keyboard.press('Tab');
+      ok((await page.textContent('#editor')).endsWith('We asked Esperanza'), 'Tab completes the name');
+      await page.keyboard.type(' and Thun'); await page.waitForTimeout(100);
+      ok(!(await page.isVisible('#nameHint')), 'no hint for words that are not names in the book');
+
+      // sprint
+      await page.evaluate((d) => window.__app.loadDoc(d, null), mk(['']));
+      await page.click('#editor');
+      await page.keyboard.press('Control+Shift+t');
+      ok(await page.evaluate(() => !!window.__app.sprint), 'Ctrl+Shift+T starts a sprint');
+      ok((await page.textContent('#statusLeft')).includes('sprint'), 'the status line shows a sprint is on, without a countdown');
+      await page.keyboard.type('one two three');
+      await page.keyboard.press('Control+Shift+t'); await page.waitForTimeout(100);
+      ok((await page.textContent('#toast')).includes('Sprint stopped. 3 words'), 'stopping reports the words written (' + (await page.textContent('#toast')) + ')');
+      await page.keyboard.press('Control+Shift+t');
+      await page.keyboard.type(' four five');
+      await page.evaluate(() => { window.__app.sprint.end = Date.now() - 1; });
+      await page.waitForFunction(() => !window.__app.sprint, null, { timeout: 4000 });
+      ok((await page.textContent('#toast')).includes('Time. 2 words'), 'when time is up the words written are shown (' + (await page.textContent('#toast')) + ')');
+
+      // caret, fade distance, evening theme, pointer
+      const f = await page.evaluate(() => {
+        const A = window.__app, b = document.body;
+        A.savePrefs({ caret: 'block', caretBlink: false, fadeReach: 50, theme: 'evening' });
+        const r = { caret: b.dataset.caret, blink: b.classList.contains('noblink'), k: b.style.getPropertyValue('--fade-k'), dark: b.classList.contains('dark'), wantDark: window.Sun.isNight() };
+        A.savePrefs({ caret: 'bar', caretBlink: true, fadeReach: 100, theme: 'system' });
+        return r;
+      });
+      ok(f.caret === 'block' && f.blink && f.k === '0.5', 'caret style, blinking and fade distance apply');
+      ok(f.dark === f.wantDark, 'the evening theme follows the clock');
+      await page.click('#editor'); await page.keyboard.press('x');
+      ok(await page.evaluate(() => document.body.classList.contains('ptrhide')), 'the pointer hides while typing');
+      await page.mouse.move(300, 300); await page.mouse.move(340, 330);
+      ok(await page.evaluate(() => !document.body.classList.contains('ptrhide')), 'the pointer returns when moved');
+      ok(await page.evaluate(() => document.querySelectorAll('[data-pref=theme] button').length === 4 && document.querySelectorAll('[data-pref=caret] button').length === 3 && !!document.querySelector('#btnSprint')), 'the new settings are present');
+    }
+
+    // the first-run hint appears once, on a fresh install only
+    {
+      await page.evaluate(() => { window.__app.savePrefs({ introSeen: false }); window.__app.welcome(); });
+      ok((await page.textContent('#toast')).includes('open Settings'), 'a first install gets one gentle pointer to the settings');
+      ok(await page.evaluate(() => window.api.init().prefs.introSeen === true), 'the hint marks itself as seen');
+      await page.evaluate(() => window.__app.welcome());
+      ok(!(await page.textContent('#toast')).includes('open Settings'), 'it does not come back');
+    }
+
+    /* ---- templates, writing calendar, pace, release note, read aloud ---- */
+    {
+      const mk = (chapters) => { const d = D.newDoc(); d.chapters = chapters.map((t, i) => ({ id: 'q' + i, title: 'Part ' + (i + 1), blocks: t.split('\n').map((x) => ({ t: 'p', runs: [{ text: x }] })) })); return JSON.parse(JSON.stringify(d)); };
+      await page.evaluate((d) => window.__app.loadDoc(d, null), mk(['']));
+      await page.click('#editor');
+      await page.keyboard.press('Control+n');
+      await page.waitForSelector('#tplDlg:not([hidden])');
+      ok(await page.evaluate(() => document.querySelectorAll('#tplList button').length) >= 5, 'a new book offers the starting structures');
+      await page.keyboard.press('Escape');
+      ok(await page.evaluate(() => document.querySelector('#tplDlg').hidden), 'Escape closes the template choice');
+      await page.keyboard.press('Control+n');
+      await page.waitForSelector('#tplDlg:not([hidden])');
+      await page.click('#tplList button:has-text("Scientific article")');
+      ok(await page.evaluate(() => { const d = window.__app.snapshotDoc(); return d.chapters.length === 6 && d.chapters[0].title === 'Abstract'; }), 'choosing Scientific article creates its sections');
+      await page.keyboard.press('Control+n');
+      await page.waitForSelector('#tplDlg:not([hidden])');
+      await page.keyboard.press('Enter');
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters.length === 1), 'Enter on the first choice starts a blank book');
+
+      // calendar
+      const cal = await page.evaluate(() => {
+        const A = window.__app;
+        const key = (off) => { const d = new Date(); d.setDate(d.getDate() + off); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+        localStorage.setItem('days', JSON.stringify({ [key(-1)]: { a: 500 }, [key(-3)]: { a: 50 } }));
+        A.savePrefs({ goal: 500 });
+        A.renderDayGrid();
+        const cells = document.querySelectorAll('#dayGrid i');
+        const r = { n: cells.length, l4: document.querySelectorAll('#dayGrid i.l4').length, l1: document.querySelectorAll('#dayGrid i.l1').length, note: document.querySelector('#dayNote').textContent, label: document.querySelector('#dayGrid').getAttribute('aria-label') };
+        A.savePrefs({ goal: 0 });
+        return r;
+      });
+      ok(cal.n === 84 && cal.l4 === 1 && cal.l1 === 1, 'the calendar shades days by words written (' + JSON.stringify([cal.n, cal.l4, cal.l1]) + ')');
+      ok(cal.note.includes('Last 7 days: 550') && cal.note.includes('Best day: 500') && cal.label.includes('550'), 'the calendar says it in words too');
+      await page.evaluate((d) => window.__app.loadDoc(d, null), mk(['']));
+      await page.click('#editor');
+      await page.keyboard.type('one two three four five');
+      await page.waitForTimeout(500);
+      ok(await page.evaluate(() => { const m = JSON.parse(localStorage.getItem('days') || '{}'); const t = Object.keys(m).sort().pop(); return Object.keys(m[t] || {}).reduce((a, k) => a + m[t][k], 0) >= 5; }), 'words written today are logged');
+
+      // pace
+      const pace = await page.evaluate(() => {
+        const A = window.__app, d = new Date(); d.setDate(d.getDate() + 9);
+        const by = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        A.savePrefs({ bookGoal: 10000, finishBy: by });
+        const p = A.paceInfo();
+        const out = { per: p && p.per, note: document.querySelector('#paceNote').textContent };
+        A.savePrefs({ finishBy: '2000-01-01' });
+        out.late = A.paceInfo().late === true;
+        A.savePrefs({ bookGoal: 0, finishBy: '' });
+        return out;
+      });
+      ok(pace.per >= 990 && pace.per <= 1000 && pace.note.includes('words a day'), 'the daily pace is worked out from the target and the date (' + pace.per + ')');
+      ok(pace.late, 'a date in the past is said plainly');
+
+      // release note after an update
+      const wn = await page.evaluate(() => {
+        const A = window.__app;
+        A.whatsNew[A.appVersion] = 'New in test: something nice.';
+        A.savePrefs({ lastVersion: '' });
+        A.welcome();
+        const first = document.querySelector('#toast').textContent;
+        document.querySelector('#toast').textContent = '';
+        A.welcome();
+        return { first, second: document.querySelector('#toast').textContent, v: A.appVersion };
+      });
+      ok(wn.v && wn.first.includes('New in test'), 'an update shows its release note once');
+      ok(!wn.second.includes('New in test'), 'and not again');
+
+      // read aloud
+      await page.evaluate((d) => window.__app.loadDoc(d, null), mk(['First paragraph.\nSecond paragraph.\nThird paragraph.']));
+      await page.evaluate(() => { window.__spoken = []; window.speechSynthesis.speak = (u) => { window.__spoken.push(u.text); setTimeout(() => u.onend && u.onend(), 20); }; window.speechSynthesis.cancel = () => {}; document.querySelector('[data-mode=read]').click(); });
+      await page.waitForSelector('#readbar:not([hidden])');
+      await page.click('#readListen');
+      await page.waitForFunction(() => window.__spoken.length >= 3, null, { timeout: 4000 });
+      ok(await page.evaluate(() => window.__spoken.join('|')) === 'First paragraph.|Second paragraph.|Third paragraph.', 'Listen reads the paragraphs in order');
+      await page.waitForFunction(() => document.querySelector('#readListen').textContent === 'Listen', null, { timeout: 3000 });
+      ok(true, 'the button goes back to Listen when it finishes');
+      await page.evaluate(() => { window.__spoken.length = 0; window.speechSynthesis.speak = (u) => { window.__spoken.push(u.text); }; });
+      await page.click('#readListen');
+      ok(await page.textContent('#readListen') === 'Stop', 'the button says Stop while reading');
+      await page.click('#readListen');
+      ok(await page.textContent('#readListen') === 'Listen', 'Stop ends it');
+      await page.click('#readBack');
+    }
+
     // (i) hints explain the more involved settings on hover and on keyboard focus
     {
       await page.evaluate(() => { if (document.querySelector('#settings').hidden) document.querySelector('#btnSettings').click(); }); await page.waitForTimeout(400);

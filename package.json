@@ -1,9 +1,10 @@
 {
   "name": "quire",
   "productName": "Quire",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A distraction-free, typewriter-style writing app for books",
   "main": "main.js",
+  "desktopName": "quire.desktop",
   "author": "Jaume Puig Costa-Jussà",
   "license": "MIT",
   "scripts": {
@@ -12,6 +13,7 @@
     "test": "node test/run.js",
     "dist": "electron-builder --win --publish never",
     "release": "electron-builder --win --publish always",
+    "dist:linux": "electron-builder --linux AppImage --publish never",
     "test:e2e": "node test/e2e.js"
   },
   "build": {
@@ -54,6 +56,21 @@
           ]
         }
       ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "artifactName": "Quire-${version}-${arch}.${ext}",
+      "synopsis": "A quiet typewriter-style writing app",
+      "executableName": "quire"
     },
     "nsis": {
       "oneClick": false,

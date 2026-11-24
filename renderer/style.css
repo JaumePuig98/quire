@@ -81,12 +81,12 @@ body.reading #noteMarks{display:none}
 
 #glow{
   position:fixed;inset:0;z-index:0;pointer-events:none;
-  background:radial-gradient(ellipse 46vw 14vh at 50% var(--ly),rgb(var(--glow)/var(--glow-a)),rgb(var(--glow)/0) 100%);
+  background:radial-gradient(ellipse 46vw 14vh at 50% var(--ly),rgb(var(--glow)/min(1,calc(var(--glow-a)*var(--glow-k,1)))),rgb(var(--glow)/0) 100%);
 }
 body.noglow #glow{display:none}
 #fade{
   position:fixed;left:0;right:0;top:0;z-index:2;pointer-events:none;
-  height:calc(var(--anchor) * 1vh - var(--fs) * 2);
+  height:calc((var(--anchor) * 1vh - var(--fs) * 2) * var(--fade-k,1));
   background:linear-gradient(to bottom,rgb(var(--bg)) 0%,rgb(var(--bg)/.82) 45%,rgb(var(--bg)/0) 100%);
 }
 body.nofade #fade,body.reading #fade,body.reading #glow{display:none}
@@ -414,7 +414,7 @@ body.fmthidden #fmtToggle{font-size:0}
 #settings .st-pane a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 #editor p.sbreak{text-align:center;text-indent:0;letter-spacing:.4em;margin-top:1em;margin-bottom:1em}
 
-#cmpDlg{position:fixed;inset:0;z-index:11;background:rgb(0 0 0/.35);display:flex;align-items:center;justify-content:center}
+#cmpDlg,#tplDlg{position:fixed;inset:0;z-index:11;background:rgb(0 0 0/.35);display:flex;align-items:center;justify-content:center}
 .modal-box.cmp{width:min(760px,92vw);max-height:84vh;display:flex;flex-direction:column}
 #cmpBody{flex:1;min-height:160px;overflow:auto;padding:10px 12px;margin:6px 0;border:1px solid rgb(var(--line));border-radius:8px;background:rgb(var(--bg));font:15px/1.55 var(--serif,Georgia,serif)}
 #cmpBody p{margin:0 0 .7em}
@@ -441,3 +441,29 @@ select:focus-visible,#cmpBody:focus-visible,#exportMenu select:focus-visible{out
 #infoTip{position:fixed;z-index:20;max-width:260px;padding:8px 11px;border-radius:8px;background:rgb(var(--ink));color:rgb(var(--bg));font-size:12px;line-height:1.45;pointer-events:none;box-shadow:0 6px 20px rgb(0 0 0/.25)}
 #infoTip[hidden]{display:none}
 @media (forced-colors:active){.info{border-color:CanvasText;color:CanvasText}#infoTip{background:Canvas;color:CanvasText;border:1px solid CanvasText}}
+.swatches button.glowmatch{background:conic-gradient(from 90deg,#e8a55a,#e28296,#8cbe96,#78afdc,#be96d7,#e8a55a)}
+.swatches button.glowwhite{background:#fff}
+body.ptrhide,body.ptrhide *{cursor:none!important}
+body[data-caret=block] .lineCaret{width:.62em;margin-left:0;border-radius:2px;background:rgb(var(--accent)/.5)}
+body[data-caret=underline] .lineCaret{width:.62em;margin-left:0;border-radius:1px}
+body[data-caret=block] #editor{caret-shape:block}
+body[data-caret=underline] #editor{caret-shape:underscore}
+body.noblink .lineCaret{animation:none!important}
+#nameHint{position:fixed;z-index:30;padding:3px 10px;border-radius:7px;background:rgb(var(--panel));color:rgb(var(--muted));border:1px solid rgb(var(--line));font:12px/1.5 var(--sans);box-shadow:0 4px 14px rgb(0 0 0/.12);pointer-events:none;white-space:nowrap}
+#nameHint b{color:rgb(var(--ink));font-weight:600}
+@media (forced-colors:active){#nameHint{border-color:CanvasText}body[data-caret=block] .lineCaret{background:Highlight}}
+.modal-box.tpl{width:min(440px,92vw)}
+#tplList{display:grid;gap:8px;padding:6px 2px 4px}
+#tplList button{text-align:left;padding:10px 14px;border-radius:10px;display:block;height:auto;line-height:1.35}
+#tplList button strong{display:block;font-weight:600}
+#tplList button small{display:block;color:rgb(var(--muted));font-size:12px;margin-top:2px}
+#dayGrid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,1fr);gap:3px;margin:4px 0 2px;width:max-content;max-width:100%}
+#dayGrid i{width:13px;height:13px;border-radius:3px;background:rgb(var(--line)/.55)}
+#dayGrid i.fut{background:none}
+#dayGrid i.l1{background:rgb(var(--accent)/.25)}
+#dayGrid i.l2{background:rgb(var(--accent)/.45)}
+#dayGrid i.l3{background:rgb(var(--accent)/.7)}
+#dayGrid i.l4{background:rgb(var(--accent))}
+#dayGrid i.today{outline:1.5px solid rgb(var(--muted));outline-offset:1px}
+.row.stack{margin-bottom:0}
+@media (forced-colors:active){#dayGrid i{border:1px solid CanvasText;background:Canvas}#dayGrid i.l1,#dayGrid i.l2,#dayGrid i.l3,#dayGrid i.l4{background:Highlight}#dayGrid i.fut{border-color:transparent}#tplList button{border:1px solid ButtonText}}
