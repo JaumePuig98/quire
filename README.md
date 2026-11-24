@@ -74,6 +74,8 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 **Smart quotes** (Settings, off by default): curly quotes in English, Spanish and Catalan (« ») or German style, and three dots become one ellipsis character. Turn it on only if you want the app to change what you type.
 
+**Friendly messages** (Settings, on by default): a short greeting when you open the app, depending on the time of day, and a cheer when you reach your daily goal or a chapter target (once a day each). One switch turns them off.
+
 **Comparing versions.** In History, **Compare** shows what changed between an earlier version and the text now: struck red words were in the old version, green words are new. You can open that version as a new document from there.
 
 **Pasting** keeps bold, italic, underline, headings and quotes and drops everything else. Use Ctrl+Shift+V for plain text.

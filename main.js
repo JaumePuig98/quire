@@ -29,7 +29,7 @@ const DEFAULT_PREFS = {
   showSession: false, richPaste: true, pageNumbers: true, focus: 'off', streak: { last: '', count: 0, best: 0 },
   pageSize: null, margins: 'normal', // export page: null = Letter in Canada and the US, A4 elsewhere
   notesMode: 'comments', // export notes: off | comments | footnotes
-  smartQuotes: 'off', // off | en | es | de: curly quotes and a proper ellipsis while typing
+  smartQuotes: 'off', friendly: true, // off | en | es | de: curly quotes and a proper ellipsis while typing
   recent: [],
   lastPath: null,
 };
@@ -200,8 +200,8 @@ function createWindow() {
     setTimeout(() => { allowClose = true; if (win && !win.isDestroyed()) win.close(); }, 3000);
   });
   win.on('closed', () => { win = null; });
-  win.on('enter-full-screen', () => { prefs.fullscreen = true; savePrefs(); });
-  win.on('leave-full-screen', () => { prefs.fullscreen = false; savePrefs(); });
+  win.on('enter-full-screen', () => { prefs.fullscreen = true; savePrefs(); if (!win.isDestroyed()) win.webContents.send('win:fullscreen-state', true); });
+  win.on('leave-full-screen', () => { prefs.fullscreen = false; savePrefs(); if (!win.isDestroyed()) win.webContents.send('win:fullscreen-state', false); });
 
   // Right-click: spelling suggestions + clipboard.
   win.webContents.on('context-menu', (e, params) => {

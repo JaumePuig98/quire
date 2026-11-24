@@ -164,6 +164,14 @@ const X = require('../exporters.js');
     const chg = r.rows.find((x) => x.kind === 'chg');
     assert(chg.parts.some((p) => p.op === 'del' && p.text.trim() === 'brown') && chg.parts.some((p) => p.op === 'add' && p.text.trim() === 'red'), 'word level diff');
     assert.strictEqual(DD.compare(cur, cur).rows.every((x) => x.kind === 'same'), true, 'identical texts have no differences');
+    // an empty, untitled chapter is not exported as an "Untitled chapter" page
+    const ed = { id: 'e1', title: 'T', subtitle: '', author: '', extra: '', created: sd.created, modified: sd.modified, notes: {}, chapters: [
+      { id: 'a', title: 'One', blocks: [P('Text')] }, { id: 'b', title: '', blocks: [P('')] }, { id: 'c', title: 'Titled but empty', blocks: [P('')] }, { id: 'd', title: 'Four', blocks: [P('More')] } ] };
+    const emd = D.toMarkdown(ed, {});
+    assert(!emd.includes('Untitled chapter'), 'markdown skips an untitled empty chapter');
+    assert(emd.includes('# Titled but empty'), 'a chapter with a title stays even when empty');
+    assert(!D.toPlainText(ed, {}).includes('UNTITLED CHAPTER'), 'plain text skips an untitled empty chapter');
+    assert(D.forExport({ chapters: [{ id: 'z', title: '', blocks: [P('')] }] }, {}).chapters.length === 1, 'a book that is all empty still exports one chapter');
     // page size and margins
     const g = E.pageGeometry({ pageSize: 'a5', margins: 'narrow' });
     assert(g && g.size.width < E.pageGeometry({ pageSize: 'a4', margins: 'narrow' }).size.width, 'A5 is narrower than A4');
@@ -195,7 +203,7 @@ const X = require('../exporters.js');
   // every setting the app saves must really be in DEFAULT_PREFS (a stray // once swallowed five of them)
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   const block = mainSrc.slice(mainSrc.indexOf('const DEFAULT_PREFS = {'), mainSrc.indexOf('\n};', mainSrc.indexOf('const DEFAULT_PREFS = {')));
-  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal', 'pageSize', 'margins', 'notesMode', 'smartQuotes']) {
+  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal', 'pageSize', 'margins', 'notesMode', 'smartQuotes', 'friendly']) {
     const line = block.split('\n').find((l) => new RegExp('(^|[ ,{])' + key + ':').test(l));
     assert(line, 'DEFAULT_PREFS has ' + key);
     assert(!/\/\/.*\b/.test(line.slice(0, line.search(new RegExp('(^|[ ,{])' + key + ':')) + 1)), key + ' is not inside a comment');

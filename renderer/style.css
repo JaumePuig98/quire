@@ -427,3 +427,9 @@ body.fmthidden #fmtToggle{font-size:0}
 select:focus-visible,#cmpBody:focus-visible,#exportMenu select:focus-visible{outline:2px solid rgb(var(--accent));outline-offset:1px}
 @media (forced-colors:active){.ch-bar{border:1px solid CanvasText;background:Canvas}.ch-bar i{background:Highlight;forced-color-adjust:none}#editor p.sbreak{forced-color-adjust:auto}}
 #fmtbar button,#fmtbar .hint{flex:none;white-space:nowrap}
+#chapterList .ch-tools button:not(.wc){display:inline-flex;align-items:center;justify-content:center;width:28px;height:24px;padding:0}
+#chapterList .ch-tools button svg{width:14px;height:14px;display:block;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+#chapterList .pn .slash{display:none}
+#chapterList .pn.off{text-decoration:none;opacity:.6}
+#chapterList .pn.off .slash{display:block}
+#btnFull.on{background:rgb(var(--accent)/.22);color:rgb(var(--ink))}

@@ -168,6 +168,9 @@
       if (i < 0 || c.blocks[i].t !== 'h1') return c;
       return Object.assign({}, c, { title: blockText(c.blocks[i]).trim(), blocks: c.blocks.slice(0, i).concat(c.blocks.slice(i + 1)) });
     });
+    // A chapter with no title and no text at all is left out, so it does not become an "Untitled chapter" page.
+    const filled = chapters.filter((c) => c.title.trim() || c.blocks.some((b) => blockText(b).trim()));
+    if (filled.length && filled.length < chapters.length) chapters = filled;
     return Object.assign({}, doc, { chapters });
   }
   function headingPlan(doc) {

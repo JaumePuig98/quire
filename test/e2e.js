@@ -269,6 +269,7 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       };
       ok((await typed('off', '"Hi" it\'s...')) === '"Hi" it\'s...', 'smart quotes off: what you type stays as typed');
       ok((await typed('en', '"Hello," she said. It\'s \'fine\'... ok')) === '\u201cHello,\u201d she said. It\u2019s \u2018fine\u2019\u2026 ok', 'English smart quotes, apostrophe and ellipsis');
+      ok((await typed('en', "in '90s and 'quoted' x")) === 'in \u201990s and \u2018quoted\u2019 x', 'a quote before digits is an apostrophe (\u201990s), a quote before letters still opens');
       ok((await typed('es', '"Hola" y (\"si\")')) === '\u00abHola\u00bb y (\u00absi\u00bb)', 'Spanish and Catalan guillemets');
       ok((await typed('de', '"Hallo"')) === '\u201eHallo\u201c', 'German quotes');
       await page.evaluate(() => window.__app.savePrefs({ smartQuotes: 'off' }));
@@ -404,6 +405,30 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
     const last = (await model()).text.slice(-1)[0] || '';
     ok(/L2999YYY$/.test(last.replace(/^p:/, '')) || /L2999YYY/.test((await model()).text.join('')), 'a paste in the middle of a paragraph splits it correctly');
 
+    // friendly messages: a greeting at start, cheers at goals, and one switch to turn them off
+    {
+      const cheers = await page.evaluate(async () => {
+        const A = window.__app; const out = {};
+        A.savePrefs({ friendly: true });
+        const t = document.querySelector('#toast');
+        A.cheer('goal'); out.on = t.textContent;
+        t.textContent = ''; A.savePrefs({ friendly: false }); A.cheer('goal'); out.off = t.textContent;
+        A.savePrefs({ friendly: true });
+        return out;
+      });
+      ok(cheers.on.length > 10 && !cheers.on.includes('\u2014'), 'a cheer shows a short friendly message (' + cheers.on + ')');
+      ok(cheers.off === '', 'Friendly messages off shows nothing');
+    }
+    // the Full screen button shows whether full screen is on
+    {
+      const lab = () => page.evaluate(() => document.querySelector('#btnFull').textContent + '|' + document.querySelector('#btnFull').getAttribute('aria-pressed'));
+      const before = await lab();
+      await page.evaluate(() => window.api.toggleFullscreen()); await page.waitForTimeout(1200);
+      const after = await lab();
+      ok(before !== after && /Exit full screen\|true|^Full screen\|false/.test(after), 'the Full screen button changes with the window state (' + before + ' to ' + after + ')');
+      await page.evaluate(() => window.api.toggleFullscreen()); await page.waitForTimeout(1200);
+      ok((await lab()) === before, 'and changes back');
+    }
     ok(errors.length === 0, 'no errors in the page' + (errors.length ? ': ' + errors[0] : ''));
   } catch (e) {
     failed++; console.log('FAIL test crashed: ' + (e && e.stack || e));

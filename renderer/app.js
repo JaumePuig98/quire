@@ -30,12 +30,45 @@
 
   /* ============================ helpers ============================ */
   let toastTimer;
-  function toast(msg) {
+  function toast(msg, ms) {
     const t = $('#toast');
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600);
+  }
+  /* ---- friendly messages: a greeting by time of day and a cheer at goals. Short, rare, and one switch turns them off. ---- */
+  const CHEER = {
+    morning: ['Good morning. A clean page is waiting.', 'Morning. Coffee first, then words.', 'Good morning. Even a few lines count.'],
+    afternoon: ['Good afternoon. Pick up where you left off.', 'Afternoon. One sentence at a time.', 'Good afternoon. The next paragraph is the hard one, and you have it.'],
+    evening: ['Good evening. Time for a few good pages.', 'Evening. Let the day go and write.', 'Good evening. The page is quiet, which suits you.'],
+    night: ['Late night writing. The best kind.', 'Quiet hours. Perfect for a rough draft.', 'Night owl hours. Write it now, fix it tomorrow.'],
+    goal: ['Daily goal reached. Well done.', 'Today\u2019s goal is done. Anything more is a bonus.', 'Goal reached. Take a break, or write a few more lines.'],
+    chapter: ['Chapter target reached.', 'This chapter hit its target. Nicely done.', 'Chapter target done. On to the next one?'],
+    egg: ['Quire was made for slow, careful writing. Carry on.', 'No one has ever finished a book by reorganizing the settings. Go write.'],
+  };
+  let lastCheer = '';
+  function cheer(kind, ms) {
+    if (!prefs.friendly || !CHEER[kind]) return;
+    const pool = CHEER[kind].filter((m) => m !== lastCheer);
+    lastCheer = pool[Math.floor(Math.random() * pool.length)] || CHEER[kind][0];
+    toast(lastCheer, ms || 3600);
+  }
+  function welcome() {
+    const h = new Date().getHours();
+    const kind = h >= 5 && h < 12 ? 'morning' : h < 17 && h >= 12 ? 'afternoon' : h >= 17 && h < 22 ? 'evening' : 'night';
+    cheer(kind, 4200);
+  }
+  // Each milestone cheers once per day, so the message stays a treat.
+  function cheerOnce(key, kind) {
+    try {
+      const c = JSON.parse(localStorage.getItem('cheered') || '{}');
+      const day = todayKey();
+      if (c.day !== day) { c.day = day; c.done = {}; }
+      if (c.done[key]) return;
+      c.done[key] = 1; localStorage.setItem('cheered', JSON.stringify(c));
+    } catch (e) { /* storage unavailable: cheer anyway, once per session below */ }
+    cheer(kind);
   }
   const baseName = (p) => (p ? p.split(/[\\/]/).pop() : 'Untitled');
   const stem = (p) => baseName(p).replace(/\.[^.]+$/, '');
@@ -103,7 +136,6 @@
     root.style.setProperty('--anchor', prefs.anchor);
     document.body.classList.toggle('nofade', !prefs.fade);
     document.body.classList.toggle('noglow', !prefs.glow);
-    $('#btnFull').textContent = 'Full screen';
     // settings panel
     $$('[data-pref]').forEach((el) => {
       const k = el.dataset.pref;
@@ -441,6 +473,7 @@
     if (st.last === today) return;
     const count = st.last === dayKey(-1) ? st.count + 1 : 1;
     savePrefs({ streak: { last: today, count, best: Math.max(st.best || 0, count) } });
+    cheerOnce('goal', 'goal');
   }
   function streakNow() {
     const st = prefs.streak || { last: '', count: 0, best: 0 };
@@ -459,7 +492,10 @@
     clearTimeout(countTimer);
     countTimer = setTimeout(() => {
       const t = editor.innerText.trim();
+      const was = wordCounts[cur] || 0;
       wordCounts[cur] = t ? t.split(/\s+/).length : 0;
+      const goal = doc && doc.chapters[cur] && doc.chapters[cur].goal;
+      if (goal > 0 && was < goal && wordCounts[cur] >= goal && wordCounts[cur] - was < 50) cheerOnce('ch' + doc.chapters[cur].id, 'chapter'); // typed across the line, not opened already past it
       updateStatus();
     }, 250);
   }
@@ -1368,16 +1404,18 @@
         g.addEventListener('blur', commit);
         g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); commit(); } else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); done = true; renderOutline(); } });
       });
-      const mk = (label, title, fn, dis) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.disabled = !!dis; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b; };
-      const nb = mk('#', c.nonum ? 'Page numbers are hidden on this chapter. Click to show them.' : 'Page numbers are shown on this chapter. Click to hide them (the pages are still counted).', () => { c.nonum = !c.nonum; if (!c.nonum) delete c.nonum; markDirty(); renderOutline(); });
+      // Drawn icons instead of text characters: the glyphs of #, arrows and the cross differ in size and baseline between fonts, which made the row look uneven.
+      const ICON = (d, slash) => '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="' + d + '"/>' + (slash ? '<path class="slash" d="M2.5 13.5L13.5 2.5"/>' : '') + '</svg>';
+      const mk = (label, title, fn, dis) => { const b = document.createElement('button'); b.type = 'button'; if (label.charAt(0) === '<') b.innerHTML = label; else b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.disabled = !!dis; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b; };
+      const nb = mk(ICON('M6.2 2.5L5 13.5M11 2.5L9.8 13.5M2.8 6h10.6M2.6 10h10.6', true), c.nonum ? 'Page numbers are hidden on this chapter. Click to show them.' : 'Page numbers are shown on this chapter. Click to hide them (the pages are still counted).', () => { c.nonum = !c.nonum; if (!c.nonum) delete c.nonum; markDirty(); renderOutline(); });
       nb.className = 'pn' + (c.nonum ? ' off' : ''); nb.setAttribute('aria-pressed', String(!c.nonum));
       // two lines: the title has the whole width, the word count and the tools sit under it
       const top = document.createElement('div'); top.className = 'ch-top'; top.append(num, inp);
       const tools = document.createElement('div'); tools.className = 'ch-tools';
       tools.append(wc, nb,
-        mk('\u2191', 'Move chapter up', () => moveChapter(i, -1), i === 0),
-        mk('\u2193', 'Move chapter down', () => moveChapter(i, 1), i === doc.chapters.length - 1),
-        mk('\u00d7', 'Delete chapter', () => deleteChapter(i), doc.chapters.length < 2));
+        mk(ICON('M8 13V3M3.6 7.4L8 3l4.4 4.4'), 'Move chapter up', () => moveChapter(i, -1), i === 0),
+        mk(ICON('M8 3v10M3.6 8.6L8 13l4.4-4.4'), 'Move chapter down', () => moveChapter(i, 1), i === doc.chapters.length - 1),
+        mk(ICON('M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6'), 'Delete chapter', () => deleteChapter(i), doc.chapters.length < 2));
       li.append(top, tools);
       if (goal) {
         const pct = Math.min(100, Math.round((count / goal) * 100));
@@ -1834,6 +1872,16 @@
   function smartInsert(e) {
     const q = QUOTES[prefs.smartQuotes];
     if (!q || reading || e.isComposing || e.inputType !== 'insertText') return false;
+    // '90s, '24: a single quote followed by a digit is an apostrophe, not the start of a quotation.
+    if (/^[0-9]$/.test(e.data) && getSelection().isCollapsed) {
+      const b = textBeforeCaret();
+      if (b.endsWith(q.sOpen) && (b.length === 1 || /[\s([{\u2014\u2013\-\/]/.test(b.charAt(b.length - 2)))) {
+        e.preventDefault();
+        getSelection().modify('extend', 'backward', 'character');
+        document.execCommand('insertText', false, '\u2019' + e.data);
+        return true;
+      }
+    }
     if (e.data === '"' || e.data === "'") {
       const before = textBeforeCaret();
       const opening = before === '' || /[\s([{*_\u2014\u2013\-\/\u00ab\u201c\u2018\u201e\u201a\u00bf\u00a1]$/.test(before);
@@ -2033,6 +2081,18 @@
     showUpdate(i.update || { status: 'idle' }, i.kind);
   }).catch(() => {});
   window.api.onUpdateState((st) => showUpdate(st));
+  // The button shows whether full screen is on: highlighted, and it offers the way out.
+  function showFull(on) {
+    const b = $('#btnFull');
+    b.textContent = on ? 'Exit full screen' : 'Full screen';
+    b.classList.toggle('on', !!on); b.setAttribute('aria-pressed', String(!!on));
+    b.title = (on ? 'Leave full screen' : 'Full screen') + ' (F11)';
+  }
+  window.api.onFullscreen(showFull);
+  setTimeout(welcome, 1800);
+  // A small secret: click the name in About five times.
+  { let n = 0, t0 = 0; const el = document.querySelector('.aboutline strong'); if (el) el.addEventListener('click', () => { const now = Date.now(); n = now - t0 < 3000 ? n + 1 : 1; t0 = now; if (n >= 5) { n = 0; cheer('egg', 4500); } }); }
+  showFull(!!(init && init.fullscreen));
   $('#updateCheck').addEventListener('click', async () => { showUpdate({ status: 'checking' }); showUpdate(await window.api.updateCheck()); });
   $('#updateInstall').addEventListener('click', () => window.api.updateInstall());
   $('#fmtToggle').addEventListener('mousedown', (e) => e.preventDefault());
@@ -2138,7 +2198,7 @@
     el.addEventListener('focus', () => el.select());
   });
   $$('[data-reset]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.reset; savePrefs({ [k]: DEFAULTS[k] }); }));
-  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'richPaste', 'weight', 'size', 'measure', 'lineHeight', 'paraGap', 'indent', 'headBefore', 'headAfter', 'quoteGap', 'anchor', 'typewriter', 'centerMode', 'focus', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'showSession', 'autoUpdate', 'smartQuotes'];
+  const RESETTABLE = ['theme', 'accent', 'font', 'justify', 'richPaste', 'weight', 'size', 'measure', 'lineHeight', 'paraGap', 'indent', 'headBefore', 'headAfter', 'quoteGap', 'anchor', 'typewriter', 'centerMode', 'focus', 'fmtbar', 'fade', 'glow', 'goal', 'bookGoal', 'showSession', 'autoUpdate', 'smartQuotes', 'friendly'];
   $('#resetAll').addEventListener('click', () => {
     const patch = {};
     RESETTABLE.forEach((k) => { if (DEFAULTS[k] !== undefined) patch[k] = DEFAULTS[k]; });
@@ -2173,5 +2233,5 @@
   kick(true);
 
   // exposed for tests
-  window.__app = { openCompare, openResult, savePrefs, get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
+  window.__app = { cheer, openCompare, openResult, savePrefs, get doc() { return doc; }, syncFromDom, snapshotDoc, domToBlocks, blocksToHtml, setReading, setMode, addChapter, selectChapter, loadDoc, get cur() { return cur; } };
 })();
