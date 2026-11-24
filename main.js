@@ -129,7 +129,11 @@ ipcMain.handle('update:check', async () => {
   try { await updater.checkForUpdates(); } catch (err) { pushUpdate({ status: 'error', message: String((err && err.message) || err).split('\n')[0].slice(0, 160) }); }
   return updateState;
 });
-ipcMain.handle('update:install', () => { if (updater && updateState.status === 'ready') { updater.quitAndInstall(); return true; } return false; });
+// Silent install, then the new version starts by itself.
+ipcMain.handle('update:install', () => {
+  if (updater && updateState.status === 'ready') { updLog('install (restart button)'); updater.quitAndInstall(true, true); return true; }
+  return false;
+});
 
 /* ------------------------------ window ------------------------------ */
 let win = null;
