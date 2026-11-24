@@ -467,3 +467,13 @@ body.noblink .lineCaret{animation:none!important}
 #dayGrid i.today{outline:1.5px solid rgb(var(--muted));outline-offset:1px}
 .row.stack{margin-bottom:0}
 @media (forced-colors:active){#dayGrid i{border:1px solid CanvasText;background:Canvas}#dayGrid i.l1,#dayGrid i.l2,#dayGrid i.l3,#dayGrid i.l4{background:Highlight}#dayGrid i.fut{border-color:transparent}#tplList button{border:1px solid ButtonText}}
+input.plain[type=date]{width:auto;min-width:124px;text-align:right;background:transparent;border:0;border-bottom:1px solid rgb(var(--line));border-radius:0;box-shadow:none;color:rgb(var(--ink));font:inherit;font-size:12.5px;padding:2px 2px;color-scheme:light}
+body.dark input.plain[type=date]{color-scheme:dark}
+input.plain[type=date].empty{color:rgb(var(--muted))}
+input.plain[type=date]:hover{border-bottom-color:rgb(var(--muted))}
+input.plain[type=date]:focus{outline:none;border-bottom-color:rgb(var(--accent))}
+input.plain[type=date]::-webkit-calendar-picker-indicator{opacity:.55;cursor:pointer;margin-left:8px;padding:0}
+input.plain[type=date]::-webkit-calendar-picker-indicator:hover{opacity:1}
+@media (forced-colors:active){input.plain[type=date]{border-bottom-color:ButtonText}}
+
+.st-keys{text-align:center;line-height:1.6}

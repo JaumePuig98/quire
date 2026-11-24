@@ -605,6 +605,17 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       await page.click('#readBack');
     }
 
+    // selection word count and the report link
+    {
+      await page.evaluate((d) => window.__app.loadDoc(d, null), (() => { const d = D.newDoc(); d.chapters[0].blocks = [{ t: 'p', runs: [{ text: 'alpha beta gamma delta' }] }]; return JSON.parse(JSON.stringify(d)); })());
+      await page.click('#editor'); await page.keyboard.press('Control+End');
+      await page.keyboard.press('Shift+Home'); await page.waitForTimeout(400);
+      ok((await page.textContent('#statusLeft')).includes('4 words selected'), 'the status line counts the selected words (' + (await page.textContent('#statusLeft')) + ')');
+      await page.keyboard.press('End'); await page.waitForTimeout(400);
+      ok(!(await page.textContent('#statusLeft')).includes('selected'), 'and stops when nothing is selected');
+      ok(await page.evaluate(() => { const h = document.querySelector('#reportLink').href; return h.includes('/issues/new?body=') && decodeURIComponent(h).includes('Quire '); }), 'Report a problem opens an issue with the version filled in');
+    }
+
     // (i) hints explain the more involved settings on hover and on keyboard focus
     {
       await page.evaluate(() => { if (document.querySelector('#settings').hidden) document.querySelector('#btnSettings').click(); }); await page.waitForTimeout(400);

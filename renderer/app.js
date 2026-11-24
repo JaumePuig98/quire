@@ -175,6 +175,7 @@
       if (el.classList.contains('seg') || el.classList.contains('swatches')) $$('button', el).forEach((b) => { const on = b.dataset.v === String(prefs[k]); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
       else if (el.type === 'checkbox') el.checked = !!prefs[k];
       else if (document.activeElement !== el) el.value = prefs[k];
+      if (el.type === 'date') el.classList.toggle('empty', !prefs[k]);
     });
     $$('[data-num]').forEach((el) => { if (document.activeElement !== el) el.value = prefs[el.dataset.num]; });
     const stn = $('#streakNote');
@@ -622,7 +623,7 @@
     const per = Math.ceil(remaining / left);
     return {
       per,
-      text: 'About ' + per.toLocaleString() + ' words a day to reach ' + target.toLocaleString() + ' by ' + dateText + ' (' + left + (left === 1 ? ' day' : ' days') + ' left, ' + remaining.toLocaleString() + ' to go).',
+      text: 'About ' + per.toLocaleString() + ' words a day. ' + left + (left === 1 ? ' day' : ' days') + ' left, ' + remaining.toLocaleString() + ' words to go.',
       short: 'To finish by ' + dateText + ', about ' + per.toLocaleString() + ' words a day.',
     };
   }
@@ -669,7 +670,8 @@
       logDay();
     }, 250);
   }
-  function updateStatus() {
+  let selWords = 0, phLast = 0, selTimer;
+  function updateStatus(selOnly) {
     if (!doc) return;
     const ch = doc.chapters[cur];
     const multi = doc.chapters.length > 1;
@@ -677,6 +679,7 @@
     if (multi) parts.push(chapterName(ch) || 'Chapter ' + (cur + 1));
     const w = wordCounts[cur] || 0;
     parts.push(w.toLocaleString() + (w === 1 ? ' word' : ' words'));
+    if (selWords > 0) parts.push(selWords.toLocaleString() + (selWords === 1 ? ' word selected' : ' words selected'));
     if (multi) parts.push(totalWords().toLocaleString() + ' in total');
     if (prefs.showSession) parts.push('+' + sessionWords().toLocaleString() + ' this session');
     if (prefs.goal > 0) {
@@ -686,13 +689,27 @@
       const sn = streakNow();
       if (sn >= 2) parts.push(sn + ' day streak');
     }
-    const ph = placeholderCount();
+    const ph = selOnly === true ? phLast : (phLast = placeholderCount());
     if (ph) parts.push(ph + ' to fill');
     if (sprint) parts.push(sprint.last ? 'sprint: last minute' : 'sprint');
     $('#statusLeft').textContent = parts.join(' · ');
     updateBookTotal();
   }
 
+
+  // The status line counts the words you have selected.
+  function selSoon() {
+    clearTimeout(selTimer);
+    selTimer = setTimeout(() => {
+      const sel = getSelection();
+      let n = 0;
+      if (sel.rangeCount && !sel.isCollapsed && editor.contains(sel.anchorNode) && editor.contains(sel.focusNode)) {
+        const t = sel.toString().trim();
+        n = t ? t.split(/\s+/).length : 0;
+      }
+      if (n !== selWords) { selWords = n; updateStatus(true); }
+    }, 120);
+  }
 
   /* ============================ placeholders: TK and [[ ]] ============================ */
   // Type TK or [[what you need]] where you do not know something, keep writing, and come back with Ctrl+J.
@@ -2429,7 +2446,7 @@
   });
   document.addEventListener('selectionchange', () => {
     if (liveEl && (!editor.contains(liveEl) || currentBlock() !== liveEl)) setLive(null);
-    updateActive(); kick(false); applyFocus(); resumeSoon(); nameHintCheckMoved();
+    updateActive(); kick(false); applyFocus(); resumeSoon(); nameHintCheckMoved(); selSoon();
   });
   // Pasted formatted text keeps only what the page itself has: bold, italic, underline, headings and quotes.
   // Returns HTML to insert, or '' when the clipboard holds nothing but plain text (then the plain path is used).
@@ -2590,6 +2607,8 @@
     aboutKind = i.kind;
     $('#aboutVersion').textContent = 'version ' + i.version;
     $('#aboutKind').textContent = KIND_TEXT[i.kind] || '';
+    const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    $('#reportLink').href = 'https://github.com/JaumePuig98/quire/issues/new?body=' + encodeURIComponent('Quire ' + i.version + (KIND_TEXT[i.kind] ? ' (' + KIND_TEXT[i.kind] + ')' : '') + ', ' + plat + '\n\nWhat happened:\n\n\nWhat I expected:\n');
     showUpdate(i.update || { status: 'idle' }, i.kind);
   }).catch(() => {});
   window.api.onUpdateState((st) => showUpdate(st));
