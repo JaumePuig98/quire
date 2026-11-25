@@ -56,6 +56,7 @@
     toast(lastCheer, ms || 3600);
   }
   function welcome() {
+    if (!$('#tplDlg').hidden) { setTimeout(welcome, 1200); return; } // let the person choose what to start first
     welcomed = true;
     if (prefs.introSeen === false) { // first install only: one quiet pointer to the settings, never again
       savePrefs({ introSeen: true, lastVersion: appVersion });
@@ -279,7 +280,8 @@
     layoutMarks();
     if (readingBook()) {
       const multi = doc.chapters.length > 1;
-      editor.innerHTML = doc.chapters.map((c, i) => (multi ? '<div class="chapsep" data-ch="' + i + '" contenteditable="false">' + (c.title.trim() ? c.title.trim().replace(/&/g, '&amp;').replace(/</g, '&lt;') : '* * *') + '</div>' : '') + blocksToHtml(c.blocks)).join('');
+      const sepName = (c) => (kindOf() === 'journal' ? D.chapterLabel(doc, c) : c.title.trim());
+      editor.innerHTML = doc.chapters.map((c, i) => (multi ? '<div class="chapsep" data-ch="' + i + '" contenteditable="false">' + (sepName(c) ? sepName(c).replace(/&/g, '&amp;').replace(/</g, '&lt;') : '* * *') + '</div>' : '') + blocksToHtml(c.blocks)).join('');
       const s = editor.querySelector('.chapsep[data-ch="' + cur + '"]');
       scroller.scrollTop = s ? Math.max(0, s.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 40) : 0;
       bookScrollRef = scroller.scrollTop;
@@ -331,7 +333,14 @@
       const i = r ? d.chapters.findIndex((c) => c.id === r.cid) : -1;
       if (i >= 0) resumeAt = { i, pos: r.pos };
     }
-    cur = resumeAt ? resumeAt.i : 0;
+    cur = resumeAt ? resumeAt.i : d.kind === 'journal' ? d.chapters.length - 1 : 0; // a journal opens on its latest entry
+    // a journal opened on a new day is ready for today's entry (an entry left empty is neither saved nor exported)
+    if (d.kind === 'journal' && prefs.journalAuto !== false) {
+      const last = d.chapters[d.chapters.length - 1];
+      const dayOf = (iso) => D.dayKey(iso, prefs.journalDayStart);
+      const filled = last.title.trim() || last.blocks.some((b) => D.blockText(b).trim());
+      if (filled && last.at && dayOf(last.at) !== dayOf(new Date().toISOString())) { d.chapters.push(D.newEntry()); cur = d.chapters.length - 1; resumeAt = null; }
+    }
     nameCache.t = 0;
     filePath = path || null;
     histories.clear();
@@ -391,8 +400,12 @@
     for (const b of c.blocks) if (b.t === 'h1' && D.blockText(b).trim()) return D.blockText(b).trim();
     return '';
   }
-  const chapterName = (c) => c.title.trim() || chapterHeading(c);
+  // A journal entry is named by its date and time; a book has chapters, a single text has sections.
+  const kindOf = () => (doc && doc.kind) || 'book';
+  const unitWord = () => ({ journal: 'Entry', text: 'Section', book: 'Chapter' })[kindOf()];
+  const chapterName = (c) => (kindOf() === 'journal' ? D.chapterLabel(doc, c) : c.title.trim() || chapterHeading(c));
   function docTitle() {
+    if (kindOf() === 'journal') return (doc.title || '').trim() || 'Journal';
     return (doc.title || '').trim() || firstHeading() || chapterName(doc.chapters[0]) || firstWords() || 'Untitled';
   }
   const draftName = () => D.slugify(docTitle()) + '.draft';
@@ -507,36 +520,60 @@
   }
   /* ---- new book: blank or a starting structure ---- */
   let tplDone = null;
-  function pickTemplate() {
+  function newFromTemplate(t) {
+    const d = window.Templates.build(D, t.id);
+    if (d.kind === 'journal') {
+      if (D.DATE_FMTS.indexOf(prefs.journalDate) > 0) d.dateFmt = prefs.journalDate;
+      if (D.TIME_FMTS.indexOf(prefs.journalTime) > 0) d.timeFmt = prefs.journalTime;
+    }
+    return d;
+  }
+  // Resolves to a template, 'open' (the person wants to open a file instead) or null.
+  function pickTemplate(opts) {
+    opts = opts || {};
     return new Promise((resolve) => {
       const dlg = $('#tplDlg'), list = $('#tplList');
       list.innerHTML = '';
       const finish = (t) => { dlg.hidden = true; tplDone = null; resolve(t); };
-      window.Templates.list.forEach((t) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.innerHTML = '<strong></strong><small></small>';
-        b.firstChild.textContent = t.name;
-        b.lastChild.textContent = t.desc;
-        b.addEventListener('click', () => finish(t));
-        list.appendChild(b);
+      window.Templates.groups.forEach((g) => {
+        const h = document.createElement('h3'); h.textContent = g.name; list.appendChild(h);
+        if (g.kind !== 'journal') { const p = document.createElement('p'); p.className = 'grp'; p.textContent = g.desc; list.appendChild(p); }
+        window.Templates.list.filter((t) => t.kind === g.kind).forEach((t) => {
+          if (g.kind === 'journal') return; // the journal has one starting point: the group itself
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.innerHTML = '<strong></strong><small></small>';
+          b.firstChild.textContent = t.name;
+          b.lastChild.textContent = t.desc;
+          b.addEventListener('click', () => finish(t));
+          list.appendChild(b);
+        });
+        if (g.kind === 'journal') {
+          const t = window.Templates.list.find((x) => x.kind === 'journal');
+          const b = document.createElement('button'); b.type = 'button';
+          b.innerHTML = '<strong></strong><small></small>'; b.firstChild.textContent = t.name; b.lastChild.textContent = t.desc;
+          b.addEventListener('click', () => finish(t)); list.appendChild(b);
+        }
       });
+      $('#tplCancel').textContent = opts.resumed ? 'Back to my writing' : opts.start ? 'Not now' : 'Cancel';
       tplDone = finish;
       dlg.hidden = false;
-      list.firstChild.focus();
+      list.querySelector('button').focus();
     });
   }
   $('#tplCancel').addEventListener('click', () => { if (tplDone) tplDone(null); });
+  $('#tplOpen').addEventListener('click', () => { if (tplDone) tplDone('open'); });
   async function doNew() {
     if (!(await confirmDiscard())) return;
     const t = await pickTemplate();
+    if (t === 'open') { await doOpen(true); return; }
     if (!t) { if (!reading) editor.focus(); return; }
     if (filePath) await autosave();
     window.api.recoveryClear();
-    loadDoc(window.Templates.build(D, t.id), null);
+    loadDoc(newFromTemplate(t), null);
   }
-  async function doOpen() {
-    if (!(await confirmDiscard())) return;
+  async function doOpen(confirmed) {
+    if (!confirmed && !(await confirmDiscard())) return;
     if (filePath && dirty) await autosave();
     const p = await pickFile({ mode: 'open', kind: 'doc', title: 'Open', exts: ['.draft', '.md', '.markdown', '.txt', '.docx'], startDir: filePath ? dirOf(filePath) : '' });
     if (p === null) return;
@@ -609,6 +646,7 @@
   }
   // How many words a day it takes to reach the book target by the finish date.
   function paceInfo() {
+    if (kindOf() === 'journal') return null;
     const target = prefs.bookGoal, by = prefs.finishBy;
     if (!(target > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(by || '')) return null;
     const p = by.split('-').map(Number);
@@ -676,7 +714,7 @@
     const ch = doc.chapters[cur];
     const multi = doc.chapters.length > 1;
     const parts = [];
-    if (multi) parts.push(chapterName(ch) || 'Chapter ' + (cur + 1));
+    if (multi || kindOf() === 'journal') parts.push(chapterName(ch) || unitWord() + ' ' + (cur + 1));
     const w = wordCounts[cur] || 0;
     parts.push(w.toLocaleString() + (w === 1 ? ' word' : ' words'));
     if (selWords > 0) parts.push(selWords.toLocaleString() + (selWords === 1 ? ' word selected' : ' words selected'));
@@ -1620,7 +1658,7 @@
             shown++;
             const li = document.createElement('li'); li.tabIndex = 0;
             const a = Math.max(0, m.index - 34), z = Math.min(text.length, m.index + m[0].length + 34);
-            const small = document.createElement('small'); small.textContent = doc.chapters.length > 1 ? (chapterName(doc.chapters[i]) || 'Chapter ' + (i + 1)) : '';
+            const small = document.createElement('small'); small.textContent = doc.chapters.length > 1 ? (chapterName(doc.chapters[i]) || unitWord() + ' ' + (i + 1)) : '';
             const mark = document.createElement('mark'); mark.textContent = m[0];
             if (small.textContent) li.appendChild(small);
             li.append((a > 0 ? '\u2026' : '') + text.slice(a, m.index), mark, text.slice(m.index + m[0].length, z) + (z < text.length ? '\u2026' : ''));
@@ -1776,12 +1814,15 @@
   function renderOutline() {
     const ol = $('#chapterList');
     ol.innerHTML = '';
-    doc.chapters.forEach((c, i) => {
+    const order = doc.chapters.map((c, i) => i);
+    if (kindOf() === 'journal') order.reverse(); // newest entry first
+    order.forEach((i) => {
+      const c = doc.chapters[i];
       const li = document.createElement('li');
       if (i === cur) li.className = 'current';
       const num = document.createElement('span'); num.className = 'num'; num.textContent = i + 1;
       const inp = document.createElement('input');
-      inp.value = c.title; inp.placeholder = chapterHeading(c) || 'Untitled chapter'; inp.setAttribute('aria-label', 'Chapter ' + (i + 1) + ' title');
+      inp.value = c.title; inp.placeholder = kindOf() === 'journal' ? 'Title (optional)' : chapterHeading(c) || 'Untitled ' + unitWord().toLowerCase(); inp.setAttribute('aria-label', unitWord() + ' ' + (i + 1) + ' title');
       inp.addEventListener('focus', () => { if (i !== cur) selectChapter(i); });
       inp.addEventListener('input', () => { c.title = inp.value; markDirty(); updateStatus(); });
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); closeOutline(); } });
@@ -1812,6 +1853,17 @@
         mk(ICON('M8 13V3M3.6 7.4L8 3l4.4 4.4'), 'Move chapter up', () => moveChapter(i, -1), i === 0),
         mk(ICON('M8 3v10M3.6 8.6L8 13l4.4-4.4'), 'Move chapter down', () => moveChapter(i, 1), i === doc.chapters.length - 1),
         mk(ICON('M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6'), 'Delete chapter', () => deleteChapter(i), doc.chapters.length < 2));
+      if (kindOf() === 'journal') {
+        nb.remove();
+        tools.querySelectorAll('button[title^="Move"]').forEach((b) => b.remove()); // entries stay in the order they were written
+        num.textContent = '';
+        const when = document.createElement('button'); when.type = 'button'; when.className = 'when'; when.textContent = c.at ? D.stampFor(doc, c.at) : 'Set date';
+        when.title = 'Change the date and time of this entry'; when.setAttribute('aria-label', 'Entry date ' + when.textContent + '. Change it.');
+        when.addEventListener('click', (ev) => { ev.stopPropagation(); editEntryDate(i, when); });
+        top.insertBefore(when, inp);
+      }
+      const uw = unitWord().toLowerCase();
+      tools.querySelectorAll('button').forEach((b) => { b.title = b.title.replace('chapter', uw); if (b.getAttribute('aria-label')) b.setAttribute('aria-label', b.getAttribute('aria-label').replace('chapter', uw)); });
       li.append(top, tools);
       if (goal) {
         const pct = Math.min(100, Math.round((count / goal) * 100));
@@ -1844,6 +1896,36 @@
       ol.appendChild(li);
     });
     updateBookTotal();
+    applyKind();
+  }
+  // Change when an entry was written. The entries stay in date order, so the entry moves to where its new date belongs.
+  function editEntryDate(i, btn) {
+    const c = doc.chapters[i];
+    const p2 = (n) => String(n).padStart(2, '0');
+    const t = c.at ? new Date(c.at) : new Date();
+    const inp = document.createElement('input'); inp.type = 'datetime-local'; inp.className = 'when-edit';
+    inp.value = t.getFullYear() + '-' + p2(t.getMonth() + 1) + '-' + p2(t.getDate()) + 'T' + p2(t.getHours()) + ':' + p2(t.getMinutes());
+    inp.setAttribute('aria-label', 'Date and time of this entry');
+    let done = false;
+    const finish = (save) => {
+      if (done) return; done = true;
+      const v = new Date(inp.value);
+      if (save && inp.value && !isNaN(v.getTime())) redateEntry(i, v.toISOString()); else renderOutline();
+    };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); } });
+    inp.addEventListener('blur', () => finish(true));
+    const title = btn.parentNode.querySelector('input'); if (title) title.style.display = 'none'; // the date gets the whole row while it is edited
+    btn.replaceWith(inp); inp.focus();
+  }
+  function redateEntry(i, iso) {
+    syncFromDom();
+    const keepId = doc.chapters[cur].id;
+    doc.chapters[i].at = iso;
+    const idx = doc.chapters.map((c, k) => k).sort((x, y) => (doc.chapters[x].at || '').localeCompare(doc.chapters[y].at || '') || x - y);
+    const chs = idx.map((k) => doc.chapters[k]), wcs = idx.map((k) => wordCounts[k]);
+    doc.chapters = chs; wordCounts = wcs;
+    cur = doc.chapters.findIndex((c) => c.id === keepId);
+    renderOutline(); updateStatus(); markDirty();
   }
   // Open a chapter and put the caret in the heading that is the k-th one listed in its table of contents
   function goToHeading(i, c, k) {
@@ -1896,9 +1978,37 @@
     else if (i < cur) cur--;
     renderChapter(); renderOutline(); updateStatus(); markDirty();
   }
+  // Labels and controls that depend on the kind of document: book, single text or journal.
+  function applyKind() {
+    if (!doc) return;
+    const k = kindOf(), many = doc.chapters.length > 1;
+    document.body.classList.toggle('kind-journal', k === 'journal');
+    document.body.classList.toggle('kind-text', k === 'text');
+    const name = k === 'journal' ? 'Entries' : k === 'text' ? (many ? 'Sections' : 'Details') : 'Chapters';
+    const b = $('#btnChapters'); b.textContent = name; b.title = name + ' (Ctrl+Shift+O)';
+    $('#outlineHead').textContent = name; $('#outline').setAttribute('aria-label', name);
+    $('#btnEntry').hidden = k !== 'journal';
+    $('#navJournal').hidden = k !== 'journal';
+    if (k !== 'journal' && $('#navJournal').classList.contains('on')) { const first = $('.st-nav button'); if (first) first.click(); }
+    if (k === 'journal') { $('#jDate').value = D.DATE_FMTS.includes(doc.dateFmt) ? doc.dateFmt : 'long'; $('#jTime').value = D.TIME_FMTS.includes(doc.timeFmt) ? doc.timeFmt : '24'; }
+    $('#addChapter').textContent = k === 'journal' ? 'New entry' : k === 'text' ? 'Add section' : 'Add chapter';
+    $('#chapterList').hidden = k === 'text' && !many;
+    $('#docTitle').placeholder = k === 'journal' ? 'Title of the journal' : k === 'text' ? 'Title of the text' : 'Title of the book or document';
+    $('#outlineHelp').textContent = k === 'journal' ? 'Click an entry to open it. Entries are stamped with the day and time they were started; the title is optional. In exports each entry begins with its date.'
+      : k === 'text' ? 'Sections are optional. They become new pages in Word and PDF exports. The title page is never numbered or counted.'
+      : $('#outlineHelp').dataset.book || $('#outlineHelp').textContent;
+  }
+  $('#outlineHelp').dataset.book = $('#outlineHelp').textContent;
   function addChapter() {
     syncFromDom();
-    doc.chapters.push(D.newChapter());
+    if (kindOf() === 'journal') {
+      // an empty entry at the end is reused instead of stacking blank ones
+      const last = doc.chapters.length - 1;
+      if (!doc.chapters[last].blocks.some((x) => D.blockText(x).trim()) && !doc.chapters[last].title.trim()) {
+        doc.chapters[last].at = new Date().toISOString(); cur = last; renderChapter(); renderOutline(); updateStatus(); markDirty(); editor.focus(); placeCaretAtEnd(); return;
+      }
+    }
+    doc.chapters.push(kindOf() === 'journal' ? D.newEntry() : D.newChapter());
     wordCounts.push(0);
     cur = doc.chapters.length - 1;
     renderChapter(); renderOutline(); updateStatus(); markDirty();
@@ -1943,7 +2053,7 @@
         exportSel = ids.length === doc.chapters.length ? null : new Set(ids);
         updateExportBtn();
       });
-      l.append(cb, document.createTextNode(' ' + (chapterName(c) || 'Chapter ' + (i + 1))));
+      l.append(cb, document.createTextNode(' ' + (chapterName(c) || unitWord() + ' ' + (i + 1))));
       list.appendChild(l);
     });
     updateExportBtn();
@@ -2300,7 +2410,7 @@
       case 's': e.preventDefault(); save(shift ? 'as' : 'save'); break;
       case 'o': e.preventDefault(); if (shift) toggle('#outline'); else doOpen(); break;
       case 'n': e.preventDefault(); doNew(); break;
-      case 'e': e.preventDefault(); toggle('#exportMenu', '#btnExport'); break;
+      case 'e': e.preventDefault(); if (shift && kindOf() === 'journal') addChapter(); else toggle('#exportMenu', '#btnExport'); break;
       case 'r': e.preventDefault(); break; // swallowed: Ctrl+R must not reload the window
       case 'f': e.preventDefault(); openFind(false); break;
       case 'h': e.preventDefault(); openFind(true); break;
@@ -2550,6 +2660,18 @@
 
   // Buttons
   $('#btnChapters').addEventListener('click', () => toggle('#outline'));
+  $('#btnEntry').addEventListener('click', () => { addChapter(); });
+  // the date and time format belong to the open journal (kept in its file) and are the default for the next new journal
+  const setJournalFormat = () => {
+    if (kindOf() !== 'journal') return;
+    const dv = $('#jDate').value, tv = $('#jTime').value;
+    if (dv === 'long') delete doc.dateFmt; else doc.dateFmt = dv;
+    if (tv === '24') delete doc.timeFmt; else doc.timeFmt = tv;
+    savePrefs({ journalDate: dv, journalTime: tv });
+    renderOutline(); updateStatus(); markDirty();
+  };
+  $('#jDate').addEventListener('change', setJournalFormat);
+  $('#jTime').addEventListener('change', setJournalFormat);
   $('#btnNew').addEventListener('click', doNew);
   $('#btnOpen').addEventListener('click', doOpen);
   $('#btnSave').addEventListener('click', () => save('save'));
@@ -2750,18 +2872,31 @@
   /* ============================ start ============================ */
   applyPrefs();
   updateModeUI();
+  // Asked once at start: when nothing is open, or when the setting says to ask every time.
+  function askStart(resumed) {
+    setTimeout(async () => {
+      const t = await pickTemplate({ start: true, resumed });
+      if (!t) { if (!reading) editor.focus(); return; }
+      if (resumed && dirty && !(await confirmDiscard())) return; // an unsaved draft that was restored is not thrown away silently
+      if (t === 'open') await doOpen(true);
+      else loadDoc(newFromTemplate(t), null);
+    }, 250);
+  }
   (function start() {
+    const ask = init.chooser && prefs.startWith === 'new';
     if (init.open && !init.open.error) {
       try {
         const p = parseByExtension(init.open.path, init.open.text);
         loadDoc(p.doc, p.path, { dirty: !!p.imported, resume: true });
+        if (ask) askStart(true);
         return;
       } catch (e) { /* fall through to a blank page */ }
     } else if (init.recovery) {
-      try { loadDoc(D.parseDraft(init.recovery), null, { dirty: true }); toast('Restored your unsaved draft'); return; } catch (e) { /* ignore */ }
+      try { loadDoc(D.parseDraft(init.recovery), null, { dirty: true }); toast('Restored your unsaved draft'); if (ask) askStart(true); return; } catch (e) { /* ignore */ }
     }
     loadDoc(D.newDoc(), null);
     if (init.open && init.open.error) window.api.error(init.open.error);
+    else if (init.chooser) askStart(false); // nothing to pick up where it was left: ask what to start, once, with no tour
   })();
   showChrome();
   kick(true);

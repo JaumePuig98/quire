@@ -4,6 +4,8 @@ A quiet place to write long things, like books.
 
 The line you are writing stays in one place, low on the screen, like paper feeding through a typewriter. Everything else stays out of the way.
 
+Quire works fully offline. There is no account, no tracking, and your writing never leaves your computer unless you put it somewhere yourself (see [Privacy](#privacy)).
+
 ![A short writing session](docs/demo.gif)
 
 ![Writing in Quire](docs/writing-light.png)
@@ -24,6 +26,7 @@ The installed version checks for a new release when it starts and every few hour
 
 * **A typewriter line.** The line you are typing stays near the middle of the screen while the text slides under it. Moving around or editing older text never moves anything.
 * **Made for books.** Chapters, a table of contents for each chapter, a title page with subtitle, author and an extra line, and notes on any passage. A new book can start blank or from a simple structure: novel, short story, non-fiction book or scientific article.
+* **Book, Single text or Journal.** When you start something new you choose what it is. A book has chapters and a title page. A single text (a story, an essay, an article) has no chapters to manage. A journal keeps dated entries: each one is stamped with the day and time, **Ctrl+Shift+E** starts the next, the book targets stay out of the way, and exports begin every entry with its date. A journal has its own Settings section: how dates and times are written, whether opening it on a new day starts a new entry, and when a new day begins for night owls. Click an entry's date in the Entries panel to change it, for example to write about yesterday.
 * **Quiet by default.** Menus hide while you type. Focus mode dims everything except the paragraph or sentence you are writing.
 * **Your page, your way.** Light, dark and an Evening theme that turns dark at sunset (worked out from your time zone, no internet needed),  three bundled fonts, text weight, size and width, and full control of the spacing between lines, paragraphs, headings and quotes.
 * **Review mode** for proof-reading, with typos and notes standing out. Spellcheck works in several languages.
@@ -61,6 +64,7 @@ You can also drag a file onto the window to open it.
 | Start or stop a sprint | Ctrl+Shift+T |
 | Accept a name suggestion | Tab |
 | Chapters panel | Ctrl+Shift+O |
+| New entry (journals) | Ctrl+Shift+E |
 | Next / previous chapter | Ctrl+PageDown / Ctrl+PageUp |
 | New / open / save / save as | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S |
 | Export | Ctrl+E |
@@ -120,7 +124,12 @@ Press Ctrl+, to open Settings. A small **i** next to the more involved settings 
 
 ## Privacy
 
-Quire works offline and keeps everything on your computer. The only network request it makes is the check for a new version, which you can turn off in Settings.
+Quire is built to work completely offline, and your writing stays on your computer.
+
+- **No account, no analytics, no tracking.** Quire does not collect or send usage data of any kind.
+- **Your files are yours.** Drafts are saved only where you choose. Recovery copies, version history and settings are kept in Quire's own folder on your computer. If you save into a folder that OneDrive, Google Drive, Dropbox or similar syncs, that service syncs the file, not Quire.
+- **The only network request** is the check for a new version, which asks GitHub for the latest release information. GitHub can see the usual things any web request reveals, such as your IP address. You can turn the check off in Settings, under About, and nothing happens when you are offline.
+- **Nothing is sent without you.** Copy diagnostics only puts text on your clipboard. Report a problem opens a page in your browser with your version filled in, and nothing is posted until you submit it yourself.
 
 ## Feedback
 

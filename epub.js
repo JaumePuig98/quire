@@ -114,7 +114,7 @@ function toEpub(doc, opts) {
   doc.chapters.forEach((c, ci) => {
     chapNotes = [];
     let body = '';
-    const name = plan.chapterHeadings ? (c.title.trim() || 'Untitled chapter') : (doc.title.trim() || 'Text');
+    const name = plan.chapterHeadings ? D.chapterLabel(doc, c) : (doc.title.trim() || 'Text');
     if (plan.chapterHeadings) body += '<h1>' + esc(name) + '</h1>\n';
     for (const b of c.blocks) {
       if (!D.blockText(b).trim()) continue;

@@ -19,8 +19,57 @@
   function newChapter(title) {
     return { id: uid(), title: title || '', blocks: [{ t: 'p', runs: [] }] };
   }
-  function newDoc() {
-    return { format: FORMAT, version: VERSION, id: uid(), title: '', created: now(), modified: now(), chapters: [newChapter()], notes: {} };
+  // kind: 'book' (the default, left out of the file), 'text' (one piece of writing) or 'journal' (dated entries).
+  const KINDS = ['book', 'text', 'journal'];
+  function newDoc(kind) {
+    const doc = { format: FORMAT, version: VERSION, id: uid(), title: '', created: now(), modified: now(), chapters: [newChapter()], notes: {} };
+    if (kind === 'text' || kind === 'journal') doc.kind = kind;
+    if (kind === 'journal') doc.chapters = [newEntry()];
+    return doc;
+  }
+  // A journal entry is a chapter with the moment it was started (ISO time) and an optional title.
+  function newEntry(when) {
+    const c = newChapter();
+    c.at = (when instanceof Date ? when : new Date()).toISOString();
+    return c;
+  }
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const DAYS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  // How a journal shows its dates: the date part and the time part (a journal keeps its choice in its file).
+  const DATE_FMTS = ['long', 'full', 'us', 'iso', 'dmy'], TIME_FMTS = ['24', '12', 'none'];
+  // "Wed 25 Nov 2026, 09:32" (the default) in the computer's time zone
+  function stamp(iso, fmt) {
+    const t = new Date(iso);
+    if (isNaN(t.getTime())) return '';
+    fmt = fmt || {};
+    const p2 = (n) => String(n).padStart(2, '0');
+    const df = DATE_FMTS.indexOf(fmt.date) >= 0 ? fmt.date : 'long', tf = TIME_FMTS.indexOf(fmt.time) >= 0 ? fmt.time : '24';
+    const y = t.getFullYear(), m = t.getMonth(), dd = t.getDate(), w = t.getDay();
+    const date = df === 'full' ? DAYS_FULL[w] + ' ' + dd + ' ' + MONTHS_FULL[m] + ' ' + y
+      : df === 'us' ? DAYS[w] + ', ' + MONTHS[m] + ' ' + dd + ', ' + y
+      : df === 'iso' ? y + '-' + p2(m + 1) + '-' + p2(dd)
+      : df === 'dmy' ? p2(dd) + '/' + p2(m + 1) + '/' + y
+      : DAYS[w] + ' ' + dd + ' ' + MONTHS[m] + ' ' + y;
+    const h = t.getHours();
+    const time = tf === 'none' ? '' : tf === '12' ? (h % 12 || 12) + ':' + p2(t.getMinutes()) + ' ' + (h < 12 ? 'AM' : 'PM') : p2(h) + ':' + p2(t.getMinutes());
+    return time ? date + (df === 'iso' || df === 'dmy' ? ' ' : ', ') + time : date;
+  }
+  // The day an entry belongs to, when a new day starts at startHour (0 = midnight; 4 means 1 a.m. still counts as the evening before).
+  function dayKey(iso, startHour) {
+    const t = new Date(new Date(iso).getTime() - (Math.max(0, Math.min(12, parseInt(startHour, 10) || 0))) * 3600000);
+    return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+  }
+  const stampFor = (doc, iso) => stamp(iso, { date: doc.dateFmt, time: doc.timeFmt });
+  // The name of a chapter as it is shown and exported: a journal entry is its date and time, then its title if it has one.
+  function chapterLabel(doc, c) {
+    const title = (c.title || '').trim();
+    if (doc.kind === 'journal') {
+      const s = c.at ? stampFor(doc, c.at) : '';
+      return s && title ? s + ' \u00b7 ' + title : s || title || 'Untitled entry';
+    }
+    return title || 'Untitled chapter';
   }
 
   const blockText = (b) => b.runs.map((r) => r.text).join('');
@@ -74,6 +123,8 @@
       chapters: [], notes: {},
     };
     for (const k of ['author', 'subtitle', 'extra']) if (typeof doc[k] === 'string' && doc[k].trim()) out[k] = doc[k];
+    if (doc.kind === 'text' || doc.kind === 'journal') out.kind = doc.kind;
+    if (doc.kind === 'journal') { if (DATE_FMTS.indexOf(doc.dateFmt) > 0) out.dateFmt = doc.dateFmt; if (TIME_FMTS.indexOf(doc.timeFmt) > 0) out.timeFmt = doc.timeFmt; } // only a choice other than the default is kept
     const seen = new Set();
     for (const c of Array.isArray(doc.chapters) ? doc.chapters : []) {
       if (!c || typeof c !== 'object') continue;
@@ -96,6 +147,7 @@
         blocks.push({ t: BLOCK_TYPES[b.t] === 1 ? b.t : 'p', runs });
       }
       const ch = { id, title: str(c.title), blocks: blocks.length ? blocks : [{ t: 'p', runs: [] }] };
+      if (typeof c.at === 'string' && !isNaN(Date.parse(c.at))) ch.at = c.at;
       if (c.nonum) ch.nonum = true; // this chapter's page numbers are not shown (the pages are still counted)
       if (Number.isInteger(c.goal) && c.goal > 0 && c.goal <= 2000000) ch.goal = c.goal; // this chapter's word target
       out.chapters.push(ch);
@@ -119,9 +171,11 @@
   function serializeDraft(doc) {
     const head = { format: FORMAT, version: VERSION, id: doc.id, title: doc.title || '', created: doc.created, modified: doc.modified };
     for (const k of ['subtitle', 'author', 'extra']) if (doc[k]) head[k] = doc[k];
+    if (doc.kind === 'text' || doc.kind === 'journal') head.kind = doc.kind;
+    if (doc.kind === 'journal') { if (DATE_FMTS.indexOf(doc.dateFmt) > 0) head.dateFmt = doc.dateFmt; if (TIME_FMTS.indexOf(doc.timeFmt) > 0) head.timeFmt = doc.timeFmt; }
     const chapters = doc.chapters.map((c) => {
       const blocks = c.blocks.map((b) => '    ' + JSON.stringify({ t: b.t, runs: normalizeRuns(b.runs) })).join(',\n');
-      return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + (c.nonum ? ', "nonum": true' : '') + (c.goal > 0 ? ', "goal": ' + (c.goal | 0) : '') + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
+      return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + (c.at ? ', "at": ' + JSON.stringify(c.at) : '') + (c.nonum ? ', "nonum": true' : '') + (c.goal > 0 ? ', "goal": ' + (c.goal | 0) : '') + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
     });
     const used = usedNoteIds(doc);
     const notes = {};
@@ -163,7 +217,7 @@
       if (picked.length) chapters = picked;
     }
     chapters = chapters.map((c) => {
-      if (!manyChapters || c.title.trim()) return c;
+      if (!manyChapters || c.title.trim() || doc.kind === 'journal') return c;
       const i = c.blocks.findIndex((b) => blockText(b).trim());
       if (i < 0 || c.blocks[i].t !== 'h1') return c;
       return Object.assign({}, c, { title: blockText(c.blocks[i]).trim(), blocks: c.blocks.slice(0, i).concat(c.blocks.slice(i + 1)) });
@@ -174,7 +228,7 @@
     return Object.assign({}, doc, { chapters });
   }
   function headingPlan(doc) {
-    const titled = doc.chapters.length > 1 || (doc.chapters[0] && doc.chapters[0].title.trim() !== '');
+    const titled = doc.kind === 'journal' || doc.chapters.length > 1 || (doc.chapters[0] && doc.chapters[0].title.trim() !== '');
     return { chapterHeadings: titled, shift: titled ? 1 : 0 };
   }
   const blockLevel = (b, shift) => (b.t === 'h1' ? 1 + shift : b.t === 'h2' ? 2 + shift : 0);
@@ -214,7 +268,7 @@
     const out = [];
     if (opts.titlePage && (doc.title || '').trim()) { out.push('# ' + escMd(doc.title.trim())); if (doc.subtitle) out.push('*' + escMd(doc.subtitle.trim()) + '*'); if (opts.author) out.push('by ' + escMd(opts.author)); if (doc.extra) out.push(escMd(doc.extra.trim())); out.push('---'); }
     doc.chapters.forEach((c) => {
-      if (plan.chapterHeadings) out.push('# ' + escMd(c.title.trim() || 'Untitled chapter'));
+      if (plan.chapterHeadings) out.push('# ' + escMd(chapterLabel(doc, c)));
       for (const b of c.blocks) {
         if (isBreak(b)) { out.push('* * *'); continue; }
         const body = inlineMd(b.runs, opts.notes ? marker : null);
@@ -239,7 +293,7 @@
     const out = [];
     if (opts.titlePage && (doc.title || '').trim()) { out.push(doc.title.trim().toUpperCase()); if (doc.subtitle) out.push(doc.subtitle.trim()); if (opts.author) out.push('by ' + opts.author); if (doc.extra) out.push(doc.extra.trim()); out.push('* * *'); }
     doc.chapters.forEach((c, ci) => {
-      if (plan.chapterHeadings) out.push((ci ? '\n' : '') + (c.title.trim() || 'Untitled chapter').toUpperCase());
+      if (plan.chapterHeadings) out.push((ci ? '\n' : '') + chapterLabel(doc, c).toUpperCase());
       for (const b of c.blocks) {
         let s = '';
         const runs = normalizeRuns(b.runs);
@@ -311,7 +365,7 @@
   }
 
   return {
-    FORMAT, VERSION, slugify, uid, now, newDoc, newChapter, blockText, isCite, countWords, countDoc, normalizeRuns, isBreak, validate,
+    FORMAT, VERSION, KINDS, DATE_FMTS, TIME_FMTS, slugify, uid, now, newDoc, newChapter, newEntry, stamp, stampFor, dayKey, chapterLabel, blockText, isCite, countWords, countDoc, normalizeRuns, isBreak, validate,
     parseDraft, serializeDraft, usedNoteIds, orderedNotes, headingPlan, forExport, blockLevel,
     toMarkdown, toPlainText, fromMarkdown, parseInlineMd,
   };

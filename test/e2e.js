@@ -80,7 +80,7 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
     /* ---- settings ---- */
     await page.keyboard.press('Control+,'); await page.waitForTimeout(300);
     ok(await page.isVisible('#settings .st-box'), 'Settings opens as a page of its own');
-    await page.click('.st-nav [data-sec=page]');
+    await page.click('.st-nav [data-sec=look]');
     const sl = page.locator('input[type=range][data-pref=size]');
     const bx = await sl.boundingBox();
     await page.mouse.move(bx.x + bx.width * 0.3, bx.y + 9); await page.mouse.down(); await page.mouse.move(bx.x + bx.width * 0.9, bx.y + 9, { steps: 6 }); await page.waitForTimeout(450);
@@ -95,7 +95,7 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
     await page.click('[data-reset=size]');
     ok((await num.inputValue()) === '22', 'the reset arrow restores the default');
     await page.click('.st-nav [data-sec=look]'); await page.click('[data-pref=font] [data-v=type]');
-    await page.click('.st-nav [data-sec=page]');
+    await page.click('.st-nav [data-sec=look]');
     ok(await page.evaluate(() => document.querySelector('[data-pref=weight]').disabled), 'weight is switched off for the one-weight Typewriter font');
     await page.click('#resetAll'); await page.waitForTimeout(200);
     ok(await page.evaluate(() => !document.querySelector('[data-pref=weight]').disabled), 'Reset all restores the font and weight');
@@ -538,6 +538,88 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       await page.waitForSelector('#tplDlg:not([hidden])');
       await page.keyboard.press('Enter');
       ok(await page.evaluate(() => window.__app.snapshotDoc().chapters.length === 1), 'Enter on the first choice starts a blank book');
+
+      // document kinds: journal, single text, book
+      await page.keyboard.press('Control+n');
+      await page.waitForSelector('#tplDlg:not([hidden])');
+      ok(await page.evaluate(() => ['Book', 'Single text', 'Journal'].every((n) => [...document.querySelectorAll('#tplList h3')].some((h) => h.textContent === n))), 'the choice is grouped as Book, Single text and Journal');
+      await page.click('#tplList button:has-text("Journal")');
+      await page.waitForTimeout(300);
+      ok(await page.evaluate(() => { const d = window.__app.snapshotDoc(); return d.kind === 'journal' && d.chapters.length === 1 && !!d.chapters[0].at; }), 'a new journal starts with a dated entry');
+      await page.keyboard.type('First day of the journal.', { delay: 5 });
+      await page.keyboard.press('Control+Shift+E');
+      await page.waitForTimeout(200);
+      await page.keyboard.press('Control+Shift+E');
+      await page.waitForTimeout(200);
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters.length === 2), 'Ctrl+Shift+E adds an entry, and an empty one is reused instead of stacking blanks');
+      await page.keyboard.type('Second entry.', { delay: 5 });
+      await page.keyboard.press('Control+Shift+O');
+      await page.waitForSelector('#outline:not([hidden])');
+      ok(await page.evaluate(() => {
+        const q = (s) => document.querySelector(s);
+        return q('#btnChapters').textContent === 'Entries' && !q('#btnEntry').hidden && document.body.classList.contains('kind-journal')
+          && q('#addChapter').textContent === 'New entry' && document.querySelectorAll('#chapterList .when').length === 2
+          && getComputedStyle(q('#paceNote')).display === 'none';
+      }), 'a journal shows Entries, a New entry button, dated rows and no book targets');
+      ok(await page.evaluate(() => document.querySelector('#chapterList li.current .ch-top input') && document.querySelector('#chapterList li:first-child').classList.contains('current')), 'entries are listed newest first');
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Control+n');
+      await page.waitForSelector('#tplDlg:not([hidden])');
+      await page.click('#tplList button:has-text("Short story")');
+      await page.waitForTimeout(300);
+      ok(await page.evaluate(() => {
+        const d = window.__app.snapshotDoc(), q = (s) => document.querySelector(s);
+        return d.kind === 'text' && q('#btnChapters').textContent === 'Details' && q('#btnEntry').hidden && !document.body.classList.contains('kind-journal');
+      }), 'a single text has no chapter machinery in the bar');
+      await page.keyboard.press('Control+n');
+      await page.waitForSelector('#tplDlg:not([hidden])');
+      await page.click('#tplList button:has-text("Blank book")');
+      await page.waitForTimeout(300);
+      ok(await page.evaluate(() => { const d = window.__app.snapshotDoc(); return !d.kind && document.querySelector('#btnChapters').textContent === 'Chapters'; }), 'a book is unchanged');
+
+      // journal details: a new entry on a new day, date format, changing an entry's date
+      {
+        const entry = (daysAgo, text, hour) => { const t = new Date(); t.setDate(t.getDate() - daysAgo); t.setHours(hour || 9, 0, 0, 0); const c = D.newEntry(t); c.blocks = [{ t: 'p', runs: [{ text }] }]; return c; };
+        const jd = (...entries) => { const d = D.newDoc('journal'); d.chapters = entries; return JSON.parse(JSON.stringify(d)); };
+        await page.evaluate((d) => window.__app.loadDoc(d, null), jd(entry(1, 'Yesterday I wrote this.')));
+        ok(await page.evaluate(() => {
+          const d = window.__app.snapshotDoc(), a = new Date(d.chapters[1] && d.chapters[1].at), n = new Date();
+          return d.chapters.length === 2 && a.toDateString() === n.toDateString() && !d.chapters[1].blocks.some((b) => b.runs.some((r) => r.text));
+        }), 'opening a journal on a new day starts today\'s entry');
+        await page.evaluate(() => window.__app.savePrefs({ journalAuto: false }));
+        await page.evaluate((d) => window.__app.loadDoc(d, null), jd(entry(1, 'Yesterday again.')));
+        ok(await page.evaluate(() => window.__app.snapshotDoc().chapters.length === 1), 'the new-day entry can be switched off');
+        await page.evaluate(() => window.__app.savePrefs({ journalAuto: true }));
+        await page.evaluate((d) => window.__app.loadDoc(d, null), jd(entry(0, 'Written today.')));
+        ok(await page.evaluate(() => window.__app.snapshotDoc().chapters.length === 1), 'no extra entry when today already has one');
+
+        // format
+        await page.evaluate((d) => window.__app.loadDoc(d, null), jd(entry(5, 'Older entry.', 8), entry(3, 'Newer entry.', 20)));
+        await page.keyboard.press('Control+,');
+        await page.waitForSelector('#settings:not([hidden])');
+        ok(await page.evaluate(() => !document.querySelector('#navJournal').hidden), 'a journal has its own Settings section');
+        await page.click('#navJournal');
+        await page.selectOption('#jDate', 'iso'); await page.selectOption('#jTime', 'none');
+        ok(await page.evaluate(() => { const d = window.__app.snapshotDoc(); return d.dateFmt === 'iso' && d.timeFmt === 'none' && /^\d{4}-\d{2}-\d{2}$/.test(document.querySelector('#chapterList .when').textContent); }), 'the journal date format changes the entries and is kept in the journal');
+        await page.keyboard.press('Escape');
+        await page.keyboard.press('Control+Shift+O');
+        await page.waitForSelector('#outline:not([hidden])');
+        // change the older entry's date to after the newer one: it moves to the end
+        const before = await page.evaluate(() => window.__app.snapshotDoc().chapters.map((c) => c.id));
+        await page.click('#chapterList li:last-child button.when');
+        const later = new Date(); later.setDate(later.getDate() - 1);
+        const p2 = (n) => String(n).padStart(2, '0');
+        await page.fill('input.when-edit', later.getFullYear() + '-' + p2(later.getMonth() + 1) + '-' + p2(later.getDate()) + 'T10:30');
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(200);
+        ok(await page.evaluate((b) => { const ids = window.__app.snapshotDoc().chapters.map((c) => c.id); return ids[0] === b[1] && ids[1] === b[0]; }, before), 'changing an entry\'s date puts it where that date belongs');
+        await page.keyboard.press('Escape');
+        await page.keyboard.press('Control+,');
+        await page.waitForSelector('#settings:not([hidden])');
+        await page.evaluate((d) => window.__app.loadDoc(d, null), JSON.parse(JSON.stringify(D.newDoc())));
+        ok(await page.evaluate(() => document.querySelector('#navJournal').hidden), 'the Journal section is hidden for a book');
+        await page.keyboard.press('Escape');
+      }
 
       // calendar
       const cal = await page.evaluate(() => {

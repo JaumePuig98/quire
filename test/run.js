@@ -264,7 +264,7 @@ const X = require('../exporters.js');
   // every setting the app saves must really be in DEFAULT_PREFS (a stray // once swallowed five of them)
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   const block = mainSrc.slice(mainSrc.indexOf('const DEFAULT_PREFS = {'), mainSrc.indexOf('\n};', mainSrc.indexOf('const DEFAULT_PREFS = {')));
-  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal', 'pageSize', 'margins', 'notesMode', 'smartQuotes', 'friendly', 'companion', 'glowStrength', 'glowColor', 'introSeen', 'finishBy', 'lastVersion', 'caret', 'caretBlink', 'fadeReach', 'names', 'sprintMin']) {
+  for (const key of ['size', 'lineHeight', 'titlePage', 'showSession', 'richPaste', 'pageNumbers', 'focus', 'streak', 'autoUpdate', 'bookGoal', 'pageSize', 'margins', 'notesMode', 'smartQuotes', 'friendly', 'companion', 'glowStrength', 'glowColor', 'introSeen', 'finishBy', 'lastVersion', 'caret', 'caretBlink', 'fadeReach', 'names', 'sprintMin', 'startWith', 'journalAuto', 'journalDayStart', 'journalDate', 'journalTime']) {
     const line = block.split('\n').find((l) => new RegExp('(^|[ ,{])' + key + ':').test(l));
     assert(line, 'DEFAULT_PREFS has ' + key);
     assert(!/\/\/.*\b/.test(line.slice(0, line.search(new RegExp('(^|[ ,{])' + key + ':')) + 1)), key + ' is not inside a comment');
@@ -289,6 +289,50 @@ const X = require('../exporters.js');
     for (const v of Object.keys(WN)) {
       assert(/^\d+\.\d+\.\d+$/.test(v), 'release note keys are versions (' + v + ')');
       assert(WN[v].length <= 220 && !/\u2014/.test(WN[v]), 'release note for ' + v + ' is short and has no em dash');
+    }
+    // document kinds: book (default), single text and journal
+    {
+      const P = (s) => ({ t: 'p', runs: [{ text: s }] });
+      const bk = TP.build(D, 'blank');
+      assert(!('kind' in bk) && D.serializeDraft(bk).indexOf('"kind"') < 0, 'a book keeps the old file format (no kind field)');
+      assert(D.validate({ format: D.FORMAT, version: 1, chapters: [] }).kind === undefined, 'a file without a kind is a book');
+      assert(TP.build(D, 'story').kind === 'text' && TP.build(D, 'journal').kind === 'journal', 'templates set the kind');
+      assert(TP.groups.map((g) => g.kind).join() === 'book,text,journal' && TP.list.every((x) => TP.groups.some((g) => g.kind === x.kind)), 'every template belongs to a group');
+      const j = D.newDoc('journal');
+      assert(j.kind === 'journal' && j.chapters.length === 1 && !isNaN(Date.parse(j.chapters[0].at)), 'a new journal starts with a stamped entry');
+      const when = new Date(2026, 10, 25, 9, 5); // local time, so the test does not depend on the time zone
+      assert(D.stamp(when.toISOString()) === 'Wed 25 Nov 2026, 09:05', 'entry stamp format (' + D.stamp(when.toISOString()) + ')');
+      j.chapters[0] = D.newEntry(when); j.chapters[0].blocks = [P('Slept badly. Wrote a lot.')];
+      const e2 = D.newEntry(new Date(2026, 10, 26, 22, 40)); e2.title = 'Late'; e2.blocks = [P('Quiet evening.')]; j.chapters.push(e2);
+      const empty = D.newEntry(new Date(2026, 10, 27, 8, 0)); j.chapters.push(empty);
+      assert(D.chapterLabel(j, j.chapters[0]) === 'Wed 25 Nov 2026, 09:05' && D.chapterLabel(j, e2) === 'Thu 26 Nov 2026, 22:40 \u00b7 Late', 'entry label is the stamp, then the title');
+      const back = D.parseDraft(D.serializeDraft(j));
+      assert(back.kind === 'journal' && back.chapters[1].at === e2.at && back.chapters[1].title === 'Late', 'a journal survives a save and reopen');
+      const ex = D.forExport(j, {});
+      assert(ex.chapters.length === 2 && ex.kind === 'journal', 'an empty entry is left out of exports');
+      const md = D.toMarkdown(ex, {}), tx = D.toPlainText(ex, {});
+      assert(md.includes('# Wed 25 Nov 2026, 09:05') && md.includes('# Thu 26 Nov 2026, 22:40 \u00b7 Late'), 'markdown has dated entry headings');
+      assert(tx.includes('WED 25 NOV 2026, 09:05'), 'plain text has dated entry headings');
+      const f = new Date(2026, 10, 25, 21, 5).toISOString();
+      assert(D.stamp(f, { date: 'iso', time: '24' }) === '2026-11-25 21:05' && D.stamp(f, { date: 'dmy', time: '12' }) === '25/11/2026 9:05 PM', 'iso and dmy dates, 24 and 12 hour time');
+      assert(D.stamp(f, { date: 'full', time: 'none' }) === 'Wednesday 25 November 2026' && D.stamp(f, { date: 'us', time: '12' }) === 'Wed, Nov 25, 2026, 9:05 PM', 'full and US dates, no time');
+      assert(D.stamp(new Date(2026, 10, 25, 0, 7).toISOString(), { time: '12' }) === 'Wed 25 Nov 2026, 12:07 AM', 'midnight is 12 AM');
+      const jf = D.newDoc('journal'); jf.dateFmt = 'iso'; jf.timeFmt = 'none'; jf.chapters[0] = D.newEntry(new Date(2026, 10, 25, 9, 5)); jf.chapters[0].blocks = [P('x')];
+      const jb = D.parseDraft(D.serializeDraft(jf));
+      assert(jb.dateFmt === 'iso' && jb.timeFmt === 'none' && D.chapterLabel(jb, jb.chapters[0]) === '2026-11-25', 'a journal keeps its date format in its file');
+      assert(D.serializeDraft(D.newDoc('journal')).indexOf('dateFmt') < 0, 'the default format is not written');
+      assert(D.validate(Object.assign({}, jb, { dateFmt: 'bogus', timeFmt: '99' })).dateFmt === undefined, 'unknown formats are dropped');
+      const late = new Date(2026, 10, 26, 1, 30).toISOString(), eve = new Date(2026, 10, 25, 22, 0).toISOString();
+      assert(D.dayKey(late, 0) !== D.dayKey(eve, 0) && D.dayKey(late, 4) === D.dayKey(eve, 4), 'with a 4 AM day start, 1:30 AM belongs to the evening before');
+      const one = D.newDoc('journal'); one.chapters[0].blocks = [P('Just one.')];
+      assert(D.headingPlan(one).chapterHeadings, 'a journal with one entry still shows its date');
+      const html = require('../exporters.js').toHtml(ex, {});
+      assert(html.includes('Wed 25 Nov 2026, 09:05'), 'html export has the entry date');
+      assert(!/class="chapter newpage/.test(html) && /class="chapter entry/.test(html), 'journal entries flow without a page break each');
+      const bookHtml = require('../exporters.js').toHtml(Object.assign({}, ex, { kind: undefined }), {});
+      assert(/class="chapter newpage/.test(bookHtml), 'book chapters still start on a new page');
+      const old = D.validate({ format: D.FORMAT, version: 1, kind: 'novel', chapters: [{ id: 'a', title: 'x', at: 'nonsense', blocks: [] }] });
+      assert(old.kind === undefined && old.chapters[0].at === undefined, 'unknown kinds and bad dates are dropped');
     }
     console.log('ok templates and release notes');
   }

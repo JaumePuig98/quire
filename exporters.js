@@ -94,7 +94,7 @@ async function toDocx(doc, opts) {
   const bodySections = [];
   doc.chapters.forEach((c) => {
     const kids = [];
-    if (plan.chapterHeadings) kids.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(c.title.trim() || 'Untitled chapter')] }));
+    if (plan.chapterHeadings) kids.push(new Paragraph({ heading: HeadingLevel.HEADING_1, spacing: doc.kind === 'journal' ? { before: 480 } : undefined, children: [new TextRun(D.chapterLabel(doc, c))] }));
     for (const b of c.blocks) {
       if (!D.blockText(b).trim()) continue;
       const lvl = D.blockLevel(b, plan.shift);
@@ -105,6 +105,13 @@ async function toDocx(doc, opts) {
     }
     bodySections.push({ show: opts.pageNumbers !== false && !c.nonum, kids: kids.length ? kids : [new Paragraph({ children: [] })] });
   });
+  // a journal flows: entries follow each other on the page instead of each starting a new one
+  if (doc.kind === 'journal' && bodySections.length > 1) {
+    const all = [];
+    bodySections.forEach((s) => all.push(...s.kids));
+    bodySections.length = 0;
+    bodySections.push({ show: opts.pageNumbers !== false, kids: all });
+  }
   const footerFor = (show) => new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: show ? [new TextRun({ children: [PageNumber.CURRENT], size: 18, color: '666666' })] : [] })] });
   const pageProps = (extra) => ({ page: Object.assign({ size: geo.size, margin: { top: geo.margin, bottom: geo.margin, left: geo.margin, right: geo.margin } }, extra || {}) });
   const sections = [];
@@ -197,8 +204,8 @@ function toHtml(doc, opts) {
   doc.chapters.forEach((c, ci) => {
     if (part === 'title') return;
     chapNotes = [];
-    body += '<section class="chapter' + (ci > 0 ? ' newpage' : '') + (opts.pageNumbers === false || c.nonum ? ' nonum' : '') + '">';
-    if (plan.chapterHeadings) body += '<h1>' + esc(c.title.trim() || 'Untitled chapter') + '</h1>';
+    body += '<section class="chapter' + (ci > 0 && doc.kind !== 'journal' ? ' newpage' : '') + (doc.kind === 'journal' ? ' entry' : '') + (opts.pageNumbers === false || c.nonum ? ' nonum' : '') + '">';
+    if (plan.chapterHeadings) body += '<h1>' + esc(D.chapterLabel(doc, c)) + '</h1>';
     for (const b of c.blocks) {
       if (!D.blockText(b).trim()) continue;
       const lvl = D.blockLevel(b, plan.shift);
@@ -247,6 +254,7 @@ function toHtml(doc, opts) {
     '.titlepage{display:flex;flex-direction:column;justify-content:center;height:' + (geo.pg.h - 2 * geo.mm - 4) + 'mm;text-align:center}\n' +
     '  .booktitle{font-size:32pt;margin:0 0 .4em}.subtitle{font-size:17pt;font-style:italic;text-align:center;margin:0 0 2.2em}.byline{font-size:14pt;text-align:center;margin:0 0 .8em}.extra{font-size:11pt;color:#555;text-align:center}\n' +
     '.newpage{break-before:page;page-break-before:always}\n' +
+    '.entry h1{font-size:1.25em;margin:1.9em 0 .6em}\n.entry:first-of-type h1{margin-top:0}\n' +
     '.nref{font-size:.7em;line-height:0;color:#555}\n' +
     '.notes ol{padding-left:1.4em}.notes li{margin:0 0 .5em;break-inside:avoid}\n' +
     '.endnotes{margin-top:2.2em;padding-top:.6em;border-top:.5pt solid #999;font-size:.88em;break-inside:avoid}.endnotes h2{font-size:1em;margin:0 0 .4em}.endnotes ol{padding-left:1.4em;margin:0}.endnotes li{margin:0 0 .35em}\n' +

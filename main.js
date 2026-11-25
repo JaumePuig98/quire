@@ -23,6 +23,8 @@ const DEFAULT_PREFS = {
   typewriter: true,
   fade: true,
   finishBy: '', lastVersion: '', // finish date (YYYY-MM-DD) for the daily pace; the version whose release note was last shown
+  journalAuto: true, journalDayStart: 0, journalDate: 'long', journalTime: '24', // journals: a new entry on a new day; how dates are written (the open journal keeps its own choice)
+  startWith: 'resume', // when Quire opens: resume (the last document) or new (ask what to start)
   introSeen: true, // set to false only on a first install (no settings file yet), so updates never show the first-run hint
   caret: 'bar', caretBlink: true, fadeReach: 100, names: true, sprintMin: 20, // caret: bar | block | underline; fadeReach in % of the default fade; names: Tab completes names
   glow: true, glowStrength: 100, glowColor: 'accent', // strength in % of the default; color: accent (follows the accent color), a color name or white
@@ -305,7 +307,7 @@ ipcMain.on('init:get', (e) => {
     try { recovery = fs.readFileSync(recoveryFile(), 'utf8'); } catch (err) { /* none */ }
     if (!recovery && prefs.lastPath && fs.existsSync(prefs.lastPath)) open = readDoc(prefs.lastPath);
   }
-  e.returnValue = { version: app.getVersion(), prefs, defaults: DEFAULT_PREFS, systemDark: nativeTheme.shouldUseDarkColors, open, recovery, fullscreen: win ? win.isFullScreen() : false };
+  e.returnValue = { version: app.getVersion(), prefs, defaults: DEFAULT_PREFS, systemDark: nativeTheme.shouldUseDarkColors, chooser: !process.env.QUIRE_E2E, open, recovery, fullscreen: win ? win.isFullScreen() : false };
 });
 ipcMain.on('prefs:set', (e, p) => {
   if (!p || typeof p !== 'object') return;

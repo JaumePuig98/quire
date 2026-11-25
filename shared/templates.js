@@ -10,22 +10,33 @@
   const SPECS = {
     blank: null,
     novel: [['', false], ['', false], ['', false]],
-    story: [['', false]],
     nonfiction: [['Introduction', true], ['', false], ['', false], ['', false], ['Conclusion', true]],
+    plain: null,
+    story: [['', false]],
     article: [['Abstract', true], ['Introduction', true], ['Methods', true], ['Results', true], ['Discussion', true], ['References', true]],
+    journal: null,
   };
 
+  // kind is what the document becomes: a book, one text, or a journal
+  const groups = [
+    { kind: 'book', name: 'Book', desc: 'Chapters, a title page, page numbers.' },
+    { kind: 'text', name: 'Single text', desc: 'A story, an essay or an article. One piece, no chapters to manage.' },
+    { kind: 'journal', name: 'Journal', desc: 'Dated entries. Each one is stamped with the day and time.' },
+  ];
   const list = [
-    { id: 'blank', name: 'Blank book', desc: 'An empty page. Start writing.' },
-    { id: 'novel', name: 'Novel', desc: 'Three empty chapters, numbered for you. Add more as you go.' },
-    { id: 'story', name: 'Short story', desc: 'One chapter and nothing else to maintain.' },
-    { id: 'nonfiction', name: 'Non-fiction book', desc: 'An introduction, three chapters and a conclusion.' },
-    { id: 'article', name: 'Scientific article', desc: 'Abstract, Introduction, Methods, Results, Discussion and References.' },
+    { id: 'blank', kind: 'book', name: 'Blank book', desc: 'An empty page. Start writing.' },
+    { id: 'novel', kind: 'book', name: 'Novel', desc: 'Three empty chapters, numbered for you. Add more as you go.' },
+    { id: 'nonfiction', kind: 'book', name: 'Non-fiction book', desc: 'An introduction, three chapters and a conclusion.' },
+    { id: 'plain', kind: 'text', name: 'Blank text', desc: 'An empty page. Start writing.' },
+    { id: 'story', kind: 'text', name: 'Short story', desc: 'One chapter and nothing else to maintain.' },
+    { id: 'article', kind: 'text', name: 'Scientific article', desc: 'Abstract, Introduction, Methods, Results, Discussion and References.' },
+    { id: 'journal', kind: 'journal', name: 'Journal', desc: 'Your first entry is ready. Add a new one whenever you like.' },
   ];
 
   // D is the document module (shared/doc.js).
   function build(D, id) {
-    const doc = D.newDoc();
+    const item = list.find((x) => x.id === id);
+    const doc = D.newDoc(item ? item.kind : 'book');
     const spec = SPECS[id];
     if (spec) {
       doc.chapters = spec.map((s) => { const c = D.newChapter(s[0]); if (s[1]) c.nonum = true; return c; });
@@ -33,5 +44,5 @@
     return doc;
   }
 
-  return { list, build };
+  return { list, groups, build };
 });
