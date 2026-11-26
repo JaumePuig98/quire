@@ -95,13 +95,26 @@ async function toDocx(doc, opts) {
   doc.chapters.forEach((c) => {
     const kids = [];
     if (plan.chapterHeadings) kids.push(new Paragraph({ heading: HeadingLevel.HEADING_1, spacing: doc.kind === 'journal' ? { before: 480 } : undefined, children: [new TextRun(D.chapterLabel(doc, c))] }));
-    for (const b of c.blocks) {
-      if (!D.blockText(b).trim()) continue;
+    const vis = c.blocks.filter((x) => D.blockText(x).trim());
+    for (let bi = 0; bi < vis.length; bi++) {
+      const b = vis[bi];
+      const pf = b.t === 'poem' && !(bi > 0 && vis[bi - 1].t === 'poem'); // first stanza of a poem
+      const pl = b.t === 'poem' && !(bi < vis.length - 1 && vis[bi + 1].t === 'poem'); // last stanza
       const lvl = D.blockLevel(b, plan.shift);
       if (D.isBreak(b)) kids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 240, after: 240 }, keepNext: true, children: [new TextRun({ text: '*   *   *' })] }));
       else if (lvl) kids.push(new Paragraph({ heading: heading(lvl), children: runsFor(b) }));
       else if (b.t === 'quote') kids.push(new Paragraph({ style: 'Quote', alignment: AlignmentType.RIGHT, children: runsFor(b) }));
-      else if (b.t === 'poem') kids.push(new Paragraph({ alignment: AlignmentType.LEFT, indent: { left: 720, firstLine: 0 }, keepLines: true, spacing: { after: 240 }, children: runsFor(b) }));
+      else if (b.t === 'poem') {
+        const lines = D.poemLines(b);
+        lines.forEach((ln, li) => {
+          const first = li === 0, last = li === lines.length - 1;
+          kids.push(new Paragraph({
+            alignment: AlignmentType.LEFT, indent: { left: 720 + 360, hanging: 360 }, keepLines: true, keepNext: !last,
+            spacing: { before: first && pf ? 360 : 0, after: last ? (pl ? 480 : 300) : 0 },
+            children: runsFor({ t: 'poem', runs: ln.length ? ln : [{ text: ' ' }] }),
+          }));
+        });
+      }
       else kids.push(new Paragraph({ alignment: opts.justify === false ? undefined : AlignmentType.JUSTIFIED, children: runsFor(b) }));
     }
     bodySections.push({ show: opts.pageNumbers !== false && !c.nonum, kids: kids.length ? kids : [new Paragraph({ children: [] })] });
@@ -207,13 +220,16 @@ function toHtml(doc, opts) {
     chapNotes = [];
     body += '<section class="chapter' + (ci > 0 && doc.kind !== 'journal' ? ' newpage' : '') + (doc.kind === 'journal' ? ' entry' : '') + (opts.pageNumbers === false || c.nonum ? ' nonum' : '') + '">';
     if (plan.chapterHeadings) body += '<h1>' + esc(D.chapterLabel(doc, c)) + '</h1>';
-    for (const b of c.blocks) {
-      if (!D.blockText(b).trim()) continue;
+    const vis = c.blocks.filter((x) => D.blockText(x).trim());
+    for (let bi = 0; bi < vis.length; bi++) {
+      const b = vis[bi];
+      const pf = b.t === 'poem' && !(bi > 0 && vis[bi - 1].t === 'poem'); // first stanza of a poem
+      const pl = b.t === 'poem' && !(bi < vis.length - 1 && vis[bi + 1].t === 'poem'); // last stanza
       const lvl = D.blockLevel(b, plan.shift);
       if (D.isBreak(b)) body += '<p class="sb">*&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;&nbsp;*</p>';
       else if (lvl) body += '<h' + Math.min(lvl, 3) + '>' + inline(b) + '</h' + Math.min(lvl, 3) + '>';
       else if (b.t === 'quote') body += '<blockquote' + (D.isCite(b) ? ' class="cite"' : '') + '>' + inline(b) + '</blockquote>';
-      else if (b.t === 'poem') body += '<p class="poem">' + inline(b) + '</p>';
+      else if (b.t === 'poem') body += '<p class="poem' + (pf ? ' pf' : '') + (pl ? ' pl' : '') + '">' + D.poemLines(b).map((ln) => '<span class="ln">' + (inline({ runs: ln }) || '&nbsp;') + '</span>').join('') + '</p>';
       else body += '<p>' + inline(b) + '</p>';
     }
     if (perChapter && chapNotes.length) body += '<div class="endnotes"><h2>Notes</h2><ol>' + chapNotes.map((id) => '<li value="' + num[id] + '">' + esc(noteText[id]) + '</li>').join('') + '</ol></div>';
@@ -249,7 +265,7 @@ function toHtml(doc, opts) {
     'h2{font-size:15pt;margin:1.5em 0 .5em}\n' +
     'h3{font-size:12.5pt;margin:1.3em 0 .4em}\n' +
     'h1+*,h2+*,h3+*{break-before:avoid}\n' +
-    'p.poem{margin:0 0 1em 2.2em;text-align:left;hyphens:none;break-inside:avoid;page-break-inside:avoid}\n' +
+    'p.poem{margin:0 0 1.4em 2.2em;line-height:1.5;text-align:left;hyphens:none;break-inside:avoid;page-break-inside:avoid}\np.poem .ln{display:block;white-space:pre-wrap;padding-left:1.5em;text-indent:-1.5em}\np.poem.pf{margin-top:1.8em}\np.poem.pl{margin-bottom:1.8em}\n' +
     'p.sb{text-align:center;margin:1.1em 0;break-after:avoid;page-break-after:avoid}\n' +
     'blockquote{margin:0 0 .2em 38%;padding:0;font-size:.92em;font-style:italic;text-align:right;break-inside:avoid;page-break-inside:avoid}\n' +
     'blockquote.cite{font-style:normal;text-align:right}\n' +

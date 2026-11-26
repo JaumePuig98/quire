@@ -88,6 +88,18 @@
   // A scene break is an ordinary paragraph that holds only * * * : older versions of the app still show it, and it exports centered.
   const isBreak = (b) => b.t === 'p' && /^\s*(\*\s*){3}$/.test(blockText(b));
   const sameFmt = (a, b) => !!a.b === !!b.b && !!a.i === !!b.i && !!a.u === !!b.u && (a.n || '') === (b.n || '');
+  // A poem block as one list of runs per line (the lines are separated by \n inside the runs).
+  function poemLines(block) {
+    const lines = [[]];
+    normalizeRuns(block.runs).forEach((r) => {
+      r.text.split('\n').forEach((t, i) => {
+        if (i > 0) lines.push([]);
+        if (t) lines[lines.length - 1].push(Object.assign({}, r, { text: t }));
+      });
+    });
+    return lines;
+  }
+
   function normalizeRuns(runs) {
     const out = [];
     for (const r of runs) {
@@ -365,7 +377,7 @@
   }
 
   return {
-    FORMAT, VERSION, KINDS, DATE_FMTS, TIME_FMTS, slugify, uid, now, newDoc, newChapter, newEntry, stamp, stampFor, dayKey, chapterLabel, blockText, isCite, countWords, countDoc, normalizeRuns, isBreak, validate,
+    FORMAT, VERSION, KINDS, DATE_FMTS, TIME_FMTS, slugify, uid, now, newDoc, newChapter, newEntry, stamp, stampFor, dayKey, chapterLabel, blockText, isCite, countWords, countDoc, normalizeRuns, poemLines, isBreak, validate,
     parseDraft, serializeDraft, usedNoteIds, orderedNotes, headingPlan, forExport, blockLevel,
     toMarkdown, toPlainText, fromMarkdown, parseInlineMd,
   };

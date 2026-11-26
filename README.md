@@ -80,7 +80,7 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 **Quotes** are set like an epigraph in a book: narrower, a little smaller and to the right. Enter keeps writing in the quote. Enter on an empty line, or after the author line, leaves it. A quote line that starts with a dash is the author.
 
-**Poems** keep every line break. Enter ends a line, Enter on an empty line starts the next stanza, and Enter in an empty stanza goes back to prose. Poems are left aligned and set in from the margin, and all exports keep them that way. Use it for a poem inside any chapter, such as a prologue.
+**Poems** keep every line break. Enter ends a line, Enter on an empty line starts the next stanza, and Enter in an empty stanza goes back to prose. Poems are left aligned and set in from the margin, and all exports keep them that way. Spaces at the start of a line are kept, so you can indent a line, and a line too long to fit wraps with a hanging indent so it still reads as one line. Use it for a poem inside any chapter, such as a prologue.
 
 **Caret centering** (Settings, Writing line) has three choices: *Off*; *Centered* (the default, the caret stays in the middle and the text moves under it); *Soft* (the caret may wander a little, then the line glides back).
 

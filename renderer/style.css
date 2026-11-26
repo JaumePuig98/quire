@@ -496,6 +496,9 @@ button.when{background:transparent;border:0;padding:0;margin:0 8px 0 0;font:inhe
 button.when:hover{color:rgb(var(--ink));text-decoration:underline}
 input.when-edit{flex:1;min-width:0;font-size:12.5px}
 
-/* a poem: left aligned, lines kept as written, set in from the margin; stanzas are the gaps between blocks */
-#editor p.poem,.lineWrap p.poem{margin:0 0 var(--qg,.9em) 2em;text-indent:0;text-align:left!important;hyphens:none;line-height:1.6}
+/* a poem: left aligned, lines kept as written, set in from the margin. Lines are close together, stanzas are
+   a little further apart, and the whole poem has room before and after, like a quote */
+#editor p.poem,.lineWrap p.poem{margin:0 0 calc(var(--qg,.9em)*1.5) 3.5em;padding:0;text-indent:-1.5em each-line;text-align:left!important;hyphens:none;line-height:1.5}
+#editor :not(.poem)+p.poem{margin-top:calc(var(--qg,.9em)*2)}
+#editor p.poem:has(+ :not(.poem)),#editor p.poem:last-child{margin-bottom:calc(var(--qg,.9em)*2)}
 body.justify #editor p.poem,body.justify .lineWrap p.poem{text-align:left!important;hyphens:none}
