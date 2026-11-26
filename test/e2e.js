@@ -687,6 +687,24 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       await page.click('#readBack');
     }
 
+    // poems: Enter ends a line, Enter on an empty line starts a stanza, and the next Enter leaves the poem
+    {
+      await page.evaluate((d) => window.__app.loadDoc(d, null), JSON.parse(JSON.stringify(D.newDoc())));
+      await page.click('#editor');
+      await page.keyboard.type('Prose first.', { delay: 4 }); await page.keyboard.press('Enter');
+      await page.keyboard.press('Control+Shift+P');
+      await page.keyboard.type('Roses are red', { delay: 4 }); await page.keyboard.press('Enter');
+      await page.keyboard.type('Violets are blue', { delay: 4 }); await page.keyboard.press('Enter'); await page.keyboard.press('Enter');
+      await page.keyboard.type('Another stanza', { delay: 4 }); await page.keyboard.press('Enter'); await page.keyboard.press('Enter'); await page.keyboard.press('Enter');
+      await page.keyboard.type('Prose again.', { delay: 4 });
+      await page.waitForTimeout(500);
+      ok(await page.evaluate(() => JSON.stringify(window.__app.snapshotDoc().chapters[0].blocks.map((b) => [b.t, b.runs.map((r) => r.text).join('')])) === JSON.stringify([['p', 'Prose first.'], ['poem', 'Roses are red\nViolets are blue'], ['poem', 'Another stanza'], ['p', 'Prose again.']])), 'a poem keeps its lines and stanzas, and Enter leaves it');
+      await page.keyboard.press('Control+Shift+P');
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].blocks[3].t === 'poem'), 'Ctrl+Shift+P makes a paragraph a poem');
+      await page.keyboard.press('Control+Shift+P');
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].blocks[3].t === 'p'), 'and takes it back');
+    }
+
     // selection word count and the report link
     {
       await page.evaluate((d) => window.__app.loadDoc(d, null), (() => { const d = D.newDoc(); d.chapters[0].blocks = [{ t: 'p', runs: [{ text: 'alpha beta gamma delta' }] }]; return JSON.parse(JSON.stringify(d)); })());

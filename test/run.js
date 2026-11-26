@@ -334,6 +334,18 @@ const X = require('../exporters.js');
       const old = D.validate({ format: D.FORMAT, version: 1, kind: 'novel', chapters: [{ id: 'a', title: 'x', at: 'nonsense', blocks: [] }] });
       assert(old.kind === undefined && old.chapters[0].at === undefined, 'unknown kinds and bad dates are dropped');
     }
+    // poems: one block per stanza, lines separated by \n
+    {
+      const pd = D.newDoc(); pd.title = 'Poems';
+      pd.chapters[0].blocks = [{ t: 'p', runs: [{ text: 'Before.' }] }, { t: 'poem', runs: [{ text: 'Roses are red\nViolets are blue' }] }, { t: 'poem', runs: [{ text: 'Second stanza' }] }];
+      const back = D.parseDraft(D.serializeDraft(pd));
+      assert(back.chapters[0].blocks[1].t === 'poem' && back.chapters[0].blocks[1].runs[0].text === 'Roses are red\nViolets are blue', 'a poem survives a save and reopen');
+      assert(D.toPlainText(pd, {}).includes('    Roses are red\n    Violets are blue'), 'plain text sets a poem in from the margin');
+      const html = require('../exporters.js').toHtml(pd, {});
+      assert(html.includes('<p class="poem">Roses are red<br>Violets are blue</p>') && html.includes('p.poem{'), 'html and PDF keep the lines and the stanza');
+      const old2 = D.validate({ format: D.FORMAT, version: 1, chapters: [{ id: 'a', title: '', blocks: [{ t: 'poem', runs: [{ text: 'x' }] }, { t: 'sonnet', runs: [{ text: 'y' }] }] }] });
+      assert(old2.chapters[0].blocks[0].t === 'poem' && old2.chapters[0].blocks[1].t === 'p', 'unknown block types still become paragraphs');
+    }
     console.log('ok templates and release notes');
   }
 

@@ -101,6 +101,7 @@ async function toDocx(doc, opts) {
       if (D.isBreak(b)) kids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 240, after: 240 }, keepNext: true, children: [new TextRun({ text: '*   *   *' })] }));
       else if (lvl) kids.push(new Paragraph({ heading: heading(lvl), children: runsFor(b) }));
       else if (b.t === 'quote') kids.push(new Paragraph({ style: 'Quote', alignment: AlignmentType.RIGHT, children: runsFor(b) }));
+      else if (b.t === 'poem') kids.push(new Paragraph({ alignment: AlignmentType.LEFT, indent: { left: 720, firstLine: 0 }, keepLines: true, spacing: { after: 240 }, children: runsFor(b) }));
       else kids.push(new Paragraph({ alignment: opts.justify === false ? undefined : AlignmentType.JUSTIFIED, children: runsFor(b) }));
     }
     bodySections.push({ show: opts.pageNumbers !== false && !c.nonum, kids: kids.length ? kids : [new Paragraph({ children: [] })] });
@@ -212,6 +213,7 @@ function toHtml(doc, opts) {
       if (D.isBreak(b)) body += '<p class="sb">*&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;&nbsp;*</p>';
       else if (lvl) body += '<h' + Math.min(lvl, 3) + '>' + inline(b) + '</h' + Math.min(lvl, 3) + '>';
       else if (b.t === 'quote') body += '<blockquote' + (D.isCite(b) ? ' class="cite"' : '') + '>' + inline(b) + '</blockquote>';
+      else if (b.t === 'poem') body += '<p class="poem">' + inline(b) + '</p>';
       else body += '<p>' + inline(b) + '</p>';
     }
     if (perChapter && chapNotes.length) body += '<div class="endnotes"><h2>Notes</h2><ol>' + chapNotes.map((id) => '<li value="' + num[id] + '">' + esc(noteText[id]) + '</li>').join('') + '</ol></div>';
@@ -247,6 +249,7 @@ function toHtml(doc, opts) {
     'h2{font-size:15pt;margin:1.5em 0 .5em}\n' +
     'h3{font-size:12.5pt;margin:1.3em 0 .4em}\n' +
     'h1+*,h2+*,h3+*{break-before:avoid}\n' +
+    'p.poem{margin:0 0 1em 2.2em;text-align:left;hyphens:none;break-inside:avoid;page-break-inside:avoid}\n' +
     'p.sb{text-align:center;margin:1.1em 0;break-after:avoid;page-break-after:avoid}\n' +
     'blockquote{margin:0 0 .2em 38%;padding:0;font-size:.92em;font-style:italic;text-align:right;break-inside:avoid;page-break-inside:avoid}\n' +
     'blockquote.cite{font-style:normal;text-align:right}\n' +

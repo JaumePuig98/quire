@@ -63,6 +63,7 @@ const CSS = (family, justify) =>
   'h1{font-size:1.6em;margin:1.2em 0 1em}h2{font-size:1.25em;margin:1.4em 0 .6em}h3{font-size:1.1em;margin:1.2em 0 .5em}\n' +
   'blockquote{margin:1em 0 .2em 25%;font-style:italic;text-align:right;text-indent:0}blockquote.cite{font-style:normal}\n' +
   '.titlepage{text-align:center;margin-top:25%}.titlepage h1{font-size:2.2em;margin:0 0 .4em}.subtitle{font-style:italic;font-size:1.2em;text-align:center;text-indent:0;margin:0 0 2em}.byline{font-size:1.1em;text-align:center;text-indent:0}.extra{color:#555;text-align:center;text-indent:0}\n' +
+  'p.poem{margin:0 0 1em 2em;text-indent:0;text-align:left}\n' +
   'p.sb{text-align:center;text-indent:0;margin:1.2em 0}p.sb+p{text-indent:0}\n' +
   'sup a{text-decoration:none}\n' +
   '.endnotes{margin-top:2em;border-top:1px solid #999;font-size:.9em}.endnotes h2{font-size:1em;margin:.6em 0 .4em}.endnotes p{text-indent:0}.endnotes ol{padding-left:1.6em}\n';
@@ -121,6 +122,7 @@ function toEpub(doc, opts) {
       const lvl = D.blockLevel(b, plan.shift);
       if (D.isBreak(b)) body += '<p class="sb">*&#160;&#160;&#160;*&#160;&#160;&#160;*</p>\n';
       else if (lvl) body += '<h' + Math.min(lvl, 3) + '>' + inline(b) + '</h' + Math.min(lvl, 3) + '>\n';
+      else if (b.t === 'poem') body += '<p class="poem">' + inline(b) + '</p>\n';
       else if (b.t === 'quote') body += '<blockquote' + (D.isCite(b) ? ' class="cite"' : '') + '>' + inline(b) + '</blockquote>\n';
       else body += '<p>' + inline(b) + '</p>\n';
     }

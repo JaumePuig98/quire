@@ -229,7 +229,7 @@
         if (n.nodeType === 1 && BLOCK.has(n.tagName)) {
           flush();
           const tag = n.tagName;
-          const t = tag === 'H1' ? 'h1' : /^H[2-6]$/.test(tag) ? 'h2' : tag === 'BLOCKQUOTE' ? 'quote' : inherited || 'p';
+          const t = tag === 'H1' ? 'h1' : /^H[2-6]$/.test(tag) ? 'h2' : tag === 'BLOCKQUOTE' ? 'quote' : tag === 'P' && n.classList.contains('poem') ? 'poem' : inherited || 'p';
           if (hasBlockChild(n)) walk(n, t);
           else push(t, n);
         } else if (n.nodeType === 1 || n.nodeType === 3) loose.push(n);
@@ -256,7 +256,7 @@
         }
         inner += h;
       }
-      const cls = D.isCite(b) ? ' class="cite"' : D.isBreak(b) ? ' class="sbreak"' : '';
+      const cls = D.isCite(b) ? ' class="cite"' : D.isBreak(b) ? ' class="sbreak"' : b.t === 'poem' ? ' class="poem"' : '';
       return '<' + tag + cls + '>' + (inner || '<br>') + '</' + tag + '>';
     }).join('');
   }
@@ -1241,6 +1241,8 @@
       if (el.hasAttribute('style') && !el.style.cssText.trim()) el.removeAttribute('style');
       if (el.hasAttribute('class') && !el.className.trim()) el.removeAttribute('class');
       if (el.tagName !== 'BLOCKQUOTE' && el.classList.contains('cite')) el.classList.remove('cite');
+      if (el.tagName !== 'P' && el.classList.contains('poem')) el.classList.remove('poem');
+      if (el.classList.contains('poem') && el.classList.contains('sbreak')) el.classList.remove('poem');
     });
   }
   function setBlock(kind) {
@@ -1260,10 +1262,29 @@
     cleanBlocks();
     afterEdit();
   }
+  const inPoem = () => { const b = currentBlock(); return !!(b && b.tagName === 'P' && b.classList.contains('poem')); };
+  // Poem on or off for the paragraph (or paragraphs) the caret is in.
+  function togglePoem() {
+    if (reading) return;
+    editor.focus(); commitHistory();
+    const on = !inPoem();
+    if (inQuote()) { document.execCommand('formatBlock', false, 'p'); if (inQuote()) document.execCommand('outdent'); }
+    const sel = getSelection();
+    if (!sel.rangeCount) return;
+    const blocks = [...editor.querySelectorAll('p,h1,h2,blockquote')].filter((el) => sel.containsNode(el, true) && !el.classList.contains('live'));
+    const targets = blocks.length ? blocks : [currentBlock()].filter(Boolean);
+    targets.forEach((el) => {
+      if (on && el.tagName !== 'P') { const p = document.createElement('p'); p.innerHTML = el.innerHTML; el.replaceWith(p); el = p; }
+      if (el.tagName === 'P') { el.classList.remove('sbreak', 'cite'); el.classList.toggle('poem', on); }
+    });
+    cleanBlocks();
+    afterEdit();
+  }
   function command(cmd) {
     if (cmd === 'note') return addNote();
     if (reading) return;
     if (cmd === 'break') return insertBreak();
+    if (cmd === 'poem') return togglePoem();
     editor.focus();
     if (cmd === 'bold' || cmd === 'italic' || cmd === 'underline') { document.execCommand(cmd); afterEdit(); }
     else setBlock(cmd);
@@ -1293,6 +1314,7 @@
     set('h1', b && b.tagName === 'H1');
     set('h2', b && b.tagName === 'H2');
     set('quote', inQuote());
+    set('poem', inPoem());
     const n = noteAtCaret();
     set('note', !!n);
     $$('.note.active').forEach((x) => x.classList.remove('active'));
@@ -2407,6 +2429,7 @@
       case '2': e.preventDefault(); command('h2'); break;
       case '0': e.preventDefault(); if (!reading) { document.execCommand('formatBlock', false, 'p'); if (inQuote()) document.execCommand('outdent'); afterEdit(); } break;
       case 'q': if (shift) { e.preventDefault(); command('quote'); } break;
+      case 'p': if (shift) { e.preventDefault(); command('poem'); } break;
       case 's': e.preventDefault(); save(shift ? 'as' : 'save'); break;
       case 'o': e.preventDefault(); if (shift) toggle('#outline'); else doOpen(); break;
       case 'n': e.preventDefault(); doNew(); break;
@@ -2450,6 +2473,29 @@
     }
     const nb = currentBlock();
     if (nb) nb.classList.remove('cite');
+    afterEdit();
+  });
+  // In a poem Enter ends a line. Enter on an empty line starts a new stanza, and Enter in an empty stanza leaves the poem.
+  function onEmptyPoemLine(b) {
+    const r = getSelection().getRangeAt(0);
+    const text = (frag) => { let s = ''; const walk = (n) => { if (n.nodeType === 3) s += n.nodeValue; else if (n.nodeName === 'BR') s += '\n'; else n.childNodes.forEach(walk); }; walk(frag); return s; };
+    const before = document.createRange(); before.selectNodeContents(b); before.setEnd(r.startContainer, r.startOffset);
+    const after = document.createRange(); after.selectNodeContents(b); after.setStart(r.endContainer, r.endOffset);
+    // the caret sits on a line with nothing on it: right after a line break, with nothing but line breaks after it
+    return /\n$/.test(text(before.cloneContents())) && text(after.cloneContents()).replace(/\n/g, '') === '';
+  }
+  editor.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || reading) return;
+    const b = currentBlock();
+    if (!b || b.tagName !== 'P' || !b.classList.contains('poem') || !getSelection().isCollapsed) return;
+    e.preventDefault();
+    if (!b.textContent.trim()) { b.classList.remove('poem'); afterEdit(); return; }
+    if (onEmptyPoemLine(b)) {
+      document.execCommand('delete'); // takes back the empty line, then a new block starts the next stanza
+      document.execCommand('insertParagraph');
+      const nb = currentBlock();
+      if (nb) nb.classList.add('poem');
+    } else document.execCommand('insertLineBreak');
     afterEdit();
   });
   /* ---- Markdown shortcuts while typing ---- */

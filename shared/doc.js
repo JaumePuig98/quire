@@ -3,7 +3,7 @@
  * Model
  *   doc      = { format:'draft', version:1, title, created, modified, chapters:[chapter], notes:{id:{text,created}} }
  *   chapter  = { id, title, blocks:[block] }
- *   block    = { t:'p'|'h1'|'h2'|'quote', runs:[run] }
+ *   block    = { t:'p'|'h1'|'h2'|'quote'|'poem', runs:[run] }  (a poem block is one stanza: its lines are separated by \n)
  *   run      = { text, b?, i?, u?, n? }          n = note id the run belongs to
  */
 (function (root, factory) {
@@ -108,7 +108,7 @@
 
   /* ---------- .draft file ---------- */
   const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
-  const BLOCK_TYPES = { p: 1, h1: 1, h2: 1, quote: 1 };
+  const BLOCK_TYPES = { p: 1, h1: 1, h2: 1, quote: 1, poem: 1 };
   // Reads a document from outside (a file, a backup) and returns a clean copy: whatever is damaged is repaired or dropped,
   // so a bad file can never crash the app.
   function validate(doc) {
@@ -303,7 +303,7 @@
           if (r.n && num[r.n] && !emitted.has(r.n) && (!nx || nx.n !== r.n)) { emitted.add(r.n); s += '[' + num[r.n] + ']'; }
         });
         if (!s.trim()) continue;
-        out.push(b.t === 'quote' ? s.split('\n').map((l) => '    ' + l).join('\n') : s);
+        out.push(b.t === 'quote' || b.t === 'poem' ? s.split('\n').map((l) => '    ' + l).join('\n') : s);
       }
     });
     if (notes.length) out.push('\nNotes\n' + notes.map((n) => '[' + n.num + '] ' + n.text.replace(/\n+/g, ' ')).join('\n'));

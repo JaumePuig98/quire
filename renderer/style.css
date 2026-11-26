@@ -495,3 +495,7 @@ body.dark input.when-edit{color-scheme:dark}
 button.when{background:transparent;border:0;padding:0;margin:0 8px 0 0;font:inherit;font-size:11.5px;color:rgb(var(--muted));cursor:pointer;text-align:left;white-space:nowrap}
 button.when:hover{color:rgb(var(--ink));text-decoration:underline}
 input.when-edit{flex:1;min-width:0;font-size:12.5px}
+
+/* a poem: left aligned, lines kept as written, set in from the margin; stanzas are the gaps between blocks */
+#editor p.poem,.lineWrap p.poem{margin:0 0 var(--qg,.9em) 2em;text-indent:0;text-align:left!important;hyphens:none;line-height:1.6}
+body.justify #editor p.poem,body.justify .lineWrap p.poem{text-align:left!important;hyphens:none}

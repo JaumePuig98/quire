@@ -55,6 +55,7 @@ You can also drag a file onto the window to open it.
 | Bold / italic / underline | Ctrl+B / Ctrl+I / Ctrl+U |
 | Heading 1 / heading 2 / normal text | Ctrl+1 / Ctrl+2 / Ctrl+0 (press again to turn off) |
 | Quote | Ctrl+Shift+Q (press again to turn off) |
+| Poem (lines kept as written, stanzas separated by an empty line) | Ctrl+Shift+P (press again to turn off) |
 | Scene break (a centered * * * between two parts of a chapter) | Ctrl+Shift+Enter |
 | Add or edit a note on selected text | Ctrl+Alt+M |
 | Undo / redo (each chapter keeps its own) | Ctrl+Z / Ctrl+Y |
@@ -78,6 +79,8 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 ## Writing in more detail
 
 **Quotes** are set like an epigraph in a book: narrower, a little smaller and to the right. Enter keeps writing in the quote. Enter on an empty line, or after the author line, leaves it. A quote line that starts with a dash is the author.
+
+**Poems** keep every line break. Enter ends a line, Enter on an empty line starts the next stanza, and Enter in an empty stanza goes back to prose. Poems are left aligned and set in from the margin, and all exports keep them that way. Use it for a poem inside any chapter, such as a prologue.
 
 **Caret centering** (Settings, Writing line) has three choices: *Off*; *Centered* (the default, the caret stays in the middle and the text moves under it); *Soft* (the caret may wander a little, then the line glides back).
 
