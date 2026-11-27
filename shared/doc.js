@@ -27,6 +27,8 @@
     if (kind === 'journal') doc.chapters = [newEntry()];
     return doc;
   }
+  // A notebook page: something to remember about the world of a book (a place, a person, a custom). Never exported.
+  function newPage() { return { id: uid(), title: '', cat: '', text: '' }; }
   // A journal entry is a chapter with the moment it was started (ISO time) and an optional title.
   function newEntry(when) {
     const c = newChapter();
@@ -165,6 +167,16 @@
       out.chapters.push(ch);
     }
     if (!out.chapters.length) out.chapters = [newChapter()];
+    if (Array.isArray(doc.notebook)) {
+      const ids = new Set();
+      for (const p of doc.notebook.slice(0, 5000)) {
+        if (!p || typeof p !== 'object') continue;
+        let id = typeof p.id === 'string' && ID_RE.test(p.id) ? p.id : uid();
+        while (ids.has(id)) id = uid();
+        ids.add(id);
+        (out.notebook || (out.notebook = [])).push({ id, title: str(p.title).slice(0, 300), cat: str(p.cat).slice(0, 80), text: str(p.text).slice(0, 500000) });
+      }
+    }
     if (doc.notes && typeof doc.notes === 'object') {
       for (const id of Object.keys(doc.notes)) {
         const n = doc.notes[id];
@@ -196,7 +208,9 @@
     return (
       '{\n' +
       Object.keys(head).map((k) => ' ' + JSON.stringify(k) + ': ' + JSON.stringify(head[k])).join(',\n') +
-      ',\n "chapters": [\n' + chapters.join(',\n') + '\n ],\n "notes": {' +
+      ',\n "chapters": [\n' + chapters.join(',\n') + '\n ]' +
+      (doc.notebook && doc.notebook.length ? ',\n "notebook": [\n' + doc.notebook.map((p) => '  ' + JSON.stringify({ id: p.id, title: p.title || '', cat: p.cat || '', text: p.text || '' })).join(',\n') + '\n ]' : '') +
+      ',\n "notes": {' +
       (noteLines.length ? '\n' + noteLines.join(',\n') + '\n ' : '') + '}\n}\n'
     );
   }
@@ -385,7 +399,7 @@
   }
 
   return {
-    FORMAT, VERSION, KINDS, DATE_FMTS, TIME_FMTS, slugify, uid, now, newDoc, newChapter, newEntry, stamp, stampFor, dayKey, chapterLabel, blockText, isCite, countWords, countDoc, normalizeRuns, poemLines, isBreak, validate,
+    FORMAT, VERSION, KINDS, DATE_FMTS, TIME_FMTS, slugify, uid, now, newDoc, newChapter, newEntry, newPage, stamp, stampFor, dayKey, chapterLabel, blockText, isCite, countWords, countDoc, normalizeRuns, poemLines, isBreak, validate,
     parseDraft, serializeDraft, usedNoteIds, orderedNotes, headingPlan, forExport, blockLevel,
     toMarkdown, toPlainText, fromMarkdown, parseInlineMd,
   };

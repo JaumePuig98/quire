@@ -507,3 +507,21 @@ body.justify #editor p.poem,body.justify .lineWrap p.poem{text-align:left!import
 #chapterList .num.grab{cursor:grab}
 #chapterList li.dragging{opacity:.45}
 #chapterList li.over{border-color:rgb(var(--accent));background:rgb(var(--accent)/.08)}
+
+/* the notebook: a panel on the right to look things up and keep writing */
+#notebook{position:fixed;z-index:7;right:12px;top:56px;bottom:72px;width:min(360px,92vw);padding:14px;display:flex;flex-direction:column;overflow:hidden;
+  background:rgb(var(--panel));border:1px solid rgb(var(--line));border-radius:12px;box-shadow:0 10px 34px rgb(0 0 0/.16)}
+#notebook[hidden]{display:none}
+#nbList,#nbPage{display:flex;flex-direction:column;min-height:0;flex:1;gap:8px}
+#nbList[hidden],#nbPage[hidden]{display:none}
+#notebook input,#notebook textarea{width:100%;box-sizing:border-box;border:1px solid rgb(var(--line));border-radius:8px;background:rgb(var(--bg));color:inherit;font:13px var(--sans);padding:8px 10px}
+#notebook textarea{flex:1;min-height:120px;resize:none;line-height:1.55;font-size:13.5px}
+#nbItems{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:2px}
+#nbItems h3{margin:10px 0 2px;font:600 11px var(--sans);letter-spacing:.05em;text-transform:uppercase;color:rgb(var(--muted))}
+#nbItems button.nb-row{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;border:0;background:none;padding:6px 8px;border-radius:7px;cursor:pointer;color:inherit;height:auto}
+#nbItems button.nb-row:hover,#nbItems button.nb-row:focus-visible{background:rgb(var(--line)/.5)}
+#nbItems .nb-t{font-size:13px}
+#nbItems .nb-s{font-size:11.5px;color:rgb(var(--muted));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+#nbItems .nb-empty{font-size:12.5px;color:rgb(var(--muted));padding:8px 2px;line-height:1.5}
+.nb-foot{display:flex;align-items:center;justify-content:space-between}
+#nbBack{align-self:flex-start;padding:4px 6px}

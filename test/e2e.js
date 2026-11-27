@@ -740,6 +740,28 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       await page.keyboard.press('Escape');
     }
 
+    // the notebook: Ctrl+K opens it on the right, you can keep writing, pages are saved in the book and never exported
+    {
+      await page.evaluate((d) => window.__app.loadDoc(d, null), JSON.parse(JSON.stringify(D.newDoc())));
+      await page.click('#editor'); await page.keyboard.type('Chapter text here.', { delay: 4 });
+      await page.keyboard.press('Control+K');
+      ok(await page.evaluate(() => !document.querySelector('#notebook').hidden && document.activeElement.id === 'nbSearch'), 'Ctrl+K opens the notebook on the search box');
+      await page.keyboard.type('Valdemar', { delay: 4 }); await page.keyboard.press('Enter');
+      ok(await page.evaluate(() => !document.querySelector('#nbPage').hidden && document.querySelector('#nbTitle').value === 'Valdemar'), 'Enter with no match starts a page with that title');
+      await page.fill('#nbCat', 'Places'); await page.fill('#nbText', 'A fishing village north of the bay. Zephyrine lives here.');
+      await page.click('#editor'); await page.keyboard.press('End'); await page.keyboard.type(' More.', { delay: 4 });
+      ok(await page.evaluate(() => !document.querySelector('#notebook').hidden && window.__app.snapshotDoc().chapters[0].blocks[0].runs.map((r) => r.text).join('').endsWith('More.')), 'the notebook stays open while you keep writing');
+      ok(await page.evaluate(() => { const n = window.__app.snapshotDoc().notebook; return n && n.length === 1 && n[0].cat === 'Places' && n[0].text.includes('Zephyrine'); }), 'the page is part of the book');
+      await page.keyboard.press('Control+K');
+      ok(await page.evaluate(() => document.querySelector('#notebook').hidden), 'Ctrl+K closes it again');
+      await page.keyboard.press('Control+K'); await page.click('#nbBack'); await page.fill('#nbSearch', 'zephyrine');
+      ok(await page.evaluate(() => document.querySelectorAll('#nbItems .nb-row').length === 1), 'search finds a page by its text');
+      await page.keyboard.press('Escape');
+      ok(await page.evaluate(() => document.querySelector('#notebook').hidden), 'Esc closes the notebook');
+      await page.keyboard.press('Control+K'); await page.click('#nbItems .nb-row'); await page.keyboard.press('Escape');
+      ok(await page.evaluate(() => document.querySelector('#notebook').hidden), 'Esc also closes it from an open page');
+    }
+
     // selection word count and the report link
     {
       await page.evaluate((d) => window.__app.loadDoc(d, null), (() => { const d = D.newDoc(); d.chapters[0].blocks = [{ t: 'p', runs: [{ text: 'alpha beta gamma delta' }] }]; return JSON.parse(JSON.stringify(d)); })());

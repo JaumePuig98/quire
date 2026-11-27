@@ -11,6 +11,7 @@
     '1.5.0': 'New in 1.5: choose Book, Single text or Journal when you start. Journals get dated entries (Ctrl+Shift+E), a fresh entry each new day, your own date format, and exports that begin each entry with its date.',
     '1.5.1': 'New in 1.5.1: a Poem style (Ctrl+Shift+P) for verse. Enter ends a line, Enter on an empty line starts a stanza, and every export keeps the lines as you wrote them.',
     '1.6.1': 'New in 1.6: poems get stanza spacing, indented lines and a Poem button that joins lines into stanzas. Drag a chapter by its number to reorder it. The Chapters panel closes when you click the page.',
+    '1.7.0': 'New in 1.7: a Notebook for your book. Press Ctrl+K to search and keep notes about places, people and customs in a panel beside your writing. Pages are never exported or counted.',
   };
 
 

@@ -103,7 +103,26 @@
   <ol id="chapterList"></ol>
   <p id="bookTotal" class="small" aria-live="polite"></p>
   <button type="button" id="addChapter" class="wide">Add chapter</button>
+  <button type="button" id="nbOpen" class="wide" title="Notes about the world of your book: places, people, customs. Never exported. (Ctrl+K)">Notebook</button>
   <p class="small" id="outlineHelp">Click a chapter to open it. Chapters become new pages in Word and PDF exports. The # button hides a chapter's page numbers (its pages are still counted); the title page is never numbered or counted.</p>
+</aside>
+
+<!-- Notebook -->
+<aside id="notebook" aria-label="Notebook" hidden>
+  <div class="panel-head"><strong>Notebook</strong><button type="button" id="nbClose" aria-label="Close the notebook">Close</button></div>
+  <div id="nbList">
+    <input id="nbSearch" type="search" placeholder="Search the notebook" aria-label="Search the notebook" autocomplete="off" spellcheck="false">
+    <div id="nbItems"></div>
+    <button type="button" id="nbAdd" class="wide">New page</button>
+  </div>
+  <div id="nbPage" hidden>
+    <button type="button" id="nbBack" class="linkbtn">All pages</button>
+    <input id="nbTitle" type="text" placeholder="Title" aria-label="Page title" autocomplete="off" maxlength="300">
+    <input id="nbCat" type="text" list="nbCats" placeholder="Category (places, people, calendar...)" aria-label="Category" autocomplete="off" maxlength="80">
+    <datalist id="nbCats"></datalist>
+    <textarea id="nbText" placeholder="Everything worth keeping: names, history, rules, how it sounds." aria-label="Page text"></textarea>
+    <div class="nb-foot"><span class="small">Not exported</span><button type="button" id="nbDelete" class="linkbtn">Delete page</button></div>
+  </div>
 </aside>
 
 <!-- Export -->

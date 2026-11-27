@@ -324,9 +324,11 @@
   }
   let resumeTimer;
   const resumeSoon = () => { clearTimeout(resumeTimer); resumeTimer = setTimeout(resumeSave, 1200); };
+  let nbPage = null; // the notebook page being edited, or null while the list shows
   function loadDoc(d, path, opts) {
     opts = opts || {};
     doc = d;
+    nbPage = null;
     let resumeAt = null;
     if (opts.resume && path && !readingBook()) {
       const r = resumeLoad(path);
@@ -2042,6 +2044,9 @@
     const b = $('#btnChapters'); b.textContent = name; b.title = name + ' (Ctrl+Shift+O)';
     $('#outlineHead').textContent = name; $('#outline').setAttribute('aria-label', name);
     $('#btnEntry').hidden = k !== 'journal';
+    $('#nbOpen').hidden = k !== 'book';
+    if (k !== 'book' && !$('#notebook').hidden) $('#notebook').hidden = true;
+    nbCount();
     $('#navJournal').hidden = k !== 'journal';
     if (k !== 'journal' && $('#navJournal').classList.contains('on')) { const first = $('.st-nav button'); if (first) first.click(); }
     if (k === 'journal') { $('#jDate').value = D.DATE_FMTS.includes(doc.dateFmt) ? doc.dateFmt : 'long'; $('#jTime').value = D.TIME_FMTS.includes(doc.timeFmt) ? doc.timeFmt : '24'; }
@@ -2369,6 +2374,100 @@
   }
   window.addEventListener('focus', () => setTimeout(checkCompanion, 400));
 
+
+  /* ============================ notebook ============================ */
+  // Pages about the world of a book (places, people, customs, calendars). They live in the book's file, are never exported or counted,
+  // and sit in a panel on the right so a look-up does not take you out of the chapter.
+  const nbEl = $('#notebook');
+  const nbNorm = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const nbPages = () => (doc.notebook || (doc.notebook = []));
+  const NB_CATS = ['Places', 'People', 'Cultures and religions', 'Calendar and time', 'Timeline', 'Creatures', 'Objects'];
+  function nbCount() { const n = doc && doc.notebook ? doc.notebook.length : 0; $('#nbOpen').textContent = n ? 'Notebook (' + n + ')' : 'Notebook'; }
+  function nbShow() {
+    if (!doc || kindOf() !== 'book') return;
+    nbEl.hidden = false; nbRender();
+    (nbPage ? $('#nbText') : $('#nbSearch')).focus();
+  }
+  function nbHide() { nbEl.hidden = true; if (!reading) editor.focus(); }
+  function nbToggle() { if (nbEl.hidden) nbShow(); else nbHide(); }
+  function nbSnippet(p, terms) {
+    const t = (p.text || '').replace(/\s+/g, ' ').trim();
+    if (!terms.length) return t.slice(0, 90);
+    const n = nbNorm(t); let at = -1;
+    for (const w of terms) { at = n.indexOf(w); if (at >= 0) break; }
+    if (at < 0) return t.slice(0, 90);
+    const from = Math.max(0, at - 30);
+    return (from ? '...' : '') + t.slice(from, from + 100);
+  }
+  function nbRender() {
+    $('#nbList').hidden = !!nbPage; $('#nbPage').hidden = !nbPage;
+    nbCount();
+    if (nbPage) return;
+    const q = $('#nbSearch').value.trim(), terms = nbNorm(q).split(/\s+/).filter(Boolean);
+    const box = $('#nbItems'); box.innerHTML = '';
+    const pages = nbPages().filter((p) => { const hay = nbNorm(p.title + ' ' + p.cat + ' ' + p.text); return terms.every((w) => hay.includes(w)); });
+    const byTitle = (x, y) => (x.title || 'Untitled page').localeCompare(y.title || 'Untitled page', undefined, { sensitivity: 'base' });
+    const row = (p) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'nb-row';
+      const t = document.createElement('span'); t.className = 'nb-t'; t.textContent = p.title || 'Untitled page';
+      const s = document.createElement('span'); s.className = 'nb-s'; s.textContent = (terms.length && p.cat ? p.cat + ': ' : '') + nbSnippet(p, terms);
+      b.append(t, s); b.addEventListener('click', () => nbOpenPage(p)); box.appendChild(b);
+    };
+    if (!pages.length) {
+      const e = document.createElement('div'); e.className = 'nb-empty';
+      e.textContent = q ? 'Nothing matches. Press Enter to start a page called “' + q + '”.' : 'Nothing here yet. Places, people, customs, dates: anything you want to keep track of goes on a page.';
+      box.appendChild(e); return;
+    }
+    if (terms.length) { pages.sort(byTitle).forEach(row); return; }
+    const groups = new Map();
+    pages.forEach((p) => { const k = p.cat.trim() || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p); });
+    const keys = [...groups.keys()].sort((x, y) => (x === '' ? 1 : y === '' ? -1 : x.localeCompare(y, undefined, { sensitivity: 'base' })));
+    keys.forEach((k) => {
+      if (keys.length > 1 || k) { const h = document.createElement('h3'); h.textContent = k || 'Other'; box.appendChild(h); }
+      groups.get(k).sort(byTitle).forEach(row);
+    });
+  }
+  function nbOpenPage(p) {
+    nbPage = p;
+    $('#nbTitle').value = p.title; $('#nbCat').value = p.cat; $('#nbText').value = p.text;
+    const cats = new Set(NB_CATS); nbPages().forEach((x) => { if (x.cat.trim()) cats.add(x.cat.trim()); });
+    $('#nbCats').innerHTML = ''; [...cats].sort().forEach((c) => { const o = document.createElement('option'); o.value = c; $('#nbCats').appendChild(o); });
+    nbRender();
+    $('#nbText').focus();
+  }
+  function nbBack() {
+    if (nbPage && !nbPage.title.trim() && !nbPage.text.trim()) { const i = nbPages().indexOf(nbPage); if (i >= 0) nbPages().splice(i, 1); markDirty(); } // an empty page is not kept
+    nbPage = null; nbRender(); $('#nbSearch').focus();
+  }
+  function nbAdd(title) {
+    const p = D.newPage(); if (title) p.title = title;
+    nbPages().push(p); markDirty(); $('#nbSearch').value = ''; nbOpenPage(p);
+    (title ? $('#nbText') : $('#nbTitle')).focus();
+  }
+  async function nbDelete() {
+    if (!nbPage) return;
+    const c = await window.api.confirm({ message: 'Delete “' + (nbPage.title.trim() || 'Untitled page') + '”?', detail: 'It is removed from the notebook. Earlier versions in History still contain it.', buttons: ['Delete', 'Cancel'] });
+    if (c !== 0) return;
+    const i = nbPages().indexOf(nbPage); if (i >= 0) nbPages().splice(i, 1);
+    markDirty(); nbPage = null; nbRender(); $('#nbSearch').focus();
+  }
+  $('#nbOpen').addEventListener('click', () => { closePanels(); nbShow(); });
+  $('#nbClose').addEventListener('click', nbHide);
+  $('#nbBack').addEventListener('click', nbBack);
+  $('#nbAdd').addEventListener('click', () => nbAdd(''));
+  $('#nbDelete').addEventListener('click', nbDelete);
+  $('#nbSearch').addEventListener('input', nbRender);
+  $('#nbSearch').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const q = $('#nbSearch').value.trim(), first = $('#nbItems .nb-row');
+    if (first) first.click(); else if (q) nbAdd(q);
+  });
+  $('#nbTitle').addEventListener('input', () => { if (nbPage) { nbPage.title = $('#nbTitle').value; markDirty(); } });
+  $('#nbCat').addEventListener('input', () => { if (nbPage) { nbPage.cat = $('#nbCat').value; markDirty(); } });
+  $('#nbText').addEventListener('input', () => { if (nbPage) { nbPage.text = $('#nbText').value; markDirty(); } });
+  $('#nbTitle').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#nbText').focus(); } });
+
   /* ============================ panels ============================ */
   function closePanels() {
     if (activeNote && !$('#notePop').hidden) closeNotePop(true);
@@ -2429,6 +2528,7 @@
     }
     if (e.key === 'F11') { e.preventDefault(); window.api.toggleFullscreen(); return; }
     if (e.key === 'F10') { e.preventDefault(); showChrome(); $('#btnChapters').focus(); return; } // the menu bar by keyboard
+    if (e.key === 'Escape' && !$('#notebook').hidden && $('#notebook').contains(document.activeElement)) { e.preventDefault(); nbHide(); return; }
     if (e.key === 'F3' && !fb.hidden) { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); return; }
     if (e.key === 'Escape') {
       if (activeNote && !$('#notePop').hidden) { e.preventDefault(); closeNotePop(false); return; }
@@ -2452,8 +2552,10 @@
       else if (e.code === 'KeyS') { e.preventDefault(); save('as'); }
       return;
     }
+    if (e.target.closest && e.target.closest('#notebook') && k !== 'k' && k !== 's') return; // typing in the notebook is plain typing
     const shift = e.shiftKey;
     switch (k) {
+      case 'k': if (!shift) { e.preventDefault(); nbToggle(); } break;
       case 'b': e.preventDefault(); command('bold'); break;
       case 'i': e.preventDefault(); command('italic'); break;
       case 'u': e.preventDefault(); command('underline'); break;
@@ -2905,7 +3007,7 @@
       $('#exportMenu').hidden = true;
     }
     // the Chapters (or Entries) panel closes when you click out on the page
-    if (!$('#outline').hidden && !e.target.closest('#outline, #topbar, .popover, dialog, #modal, #cmpDlg, #fileDlg, #tplDlg, #settings, #notePop, #toast')) closeOutline();
+    if (!$('#outline').hidden && !e.target.closest('#outline, #notebook, #topbar, .popover, dialog, #modal, #cmpDlg, #fileDlg, #tplDlg, #settings, #notePop, #toast')) closeOutline();
   });
 
   // Settings controls

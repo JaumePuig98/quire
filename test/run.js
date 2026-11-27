@@ -343,6 +343,19 @@ const X = require('../exporters.js');
       assert(ex.chapters[0].blocks.length === 1 && ex.chapters[0].blocks[0].t === 'p', 'a repeated chapter title is dropped from the text');
       assert(ex.chapters[1].blocks.length === 2 && ex.chapters[1].blocks[0].t === 'h1', 'a different heading is kept');
     }
+    // the notebook: kept in the file, never exported or counted
+    {
+      const nd = D.newDoc(); nd.title = 'World'; nd.chapters[0].blocks = [{ t: 'p', runs: [{ text: 'Chapter text.' }] }];
+      const pg = D.newPage(); pg.title = 'Valdemar'; pg.cat = 'Places'; pg.text = 'A fishing village. The secretword lives here.';
+      nd.notebook = [pg, { id: 'bad id', title: 5, cat: null, text: 'x' }];
+      const back = D.parseDraft(D.serializeDraft(nd));
+      assert(back.notebook.length === 2 && back.notebook[0].title === 'Valdemar' && back.notebook[0].cat === 'Places' && back.notebook[1].title === '', 'notebook pages survive a save and reopen, bad fields are cleaned');
+      assert(D.parseDraft(D.serializeDraft(D.newDoc())).notebook === undefined, 'a book without pages has no notebook in its file');
+      const ex = require('../exporters.js');
+      const out = [ex.toHtml(D.forExport(nd, {}), {}), D.toMarkdown(nd, {}), D.toPlainText(nd, {})].join('\n');
+      assert(!out.includes('secretword') && !out.includes('Valdemar'), 'the notebook is not in any export');
+      assert(D.countDoc(nd) === 2, 'the notebook is not in the word count');
+    }
     // poems: one block per stanza, lines separated by \n
     {
       const pd = D.newDoc(); pd.title = 'Poems';
