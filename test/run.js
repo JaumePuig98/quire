@@ -334,6 +334,15 @@ const X = require('../exporters.js');
       const old = D.validate({ format: D.FORMAT, version: 1, kind: 'novel', chapters: [{ id: 'a', title: 'x', at: 'nonsense', blocks: [] }] });
       assert(old.kind === undefined && old.chapters[0].at === undefined, 'unknown kinds and bad dates are dropped');
     }
+    // a chapter title that is also the first Heading 1 of its text is printed once
+    {
+      const dd = D.newDoc(); dd.chapters = [D.newChapter(), D.newChapter()];
+      dd.chapters[0].title = 'Prologue'; dd.chapters[0].blocks = [{ t: 'h1', runs: [{ text: ' prologue ' }] }, { t: 'p', runs: [{ text: 'Text.' }] }];
+      dd.chapters[1].title = 'One'; dd.chapters[1].blocks = [{ t: 'h1', runs: [{ text: 'The arrival' }] }, { t: 'p', runs: [{ text: 'More.' }] }];
+      const ex = D.forExport(dd, {});
+      assert(ex.chapters[0].blocks.length === 1 && ex.chapters[0].blocks[0].t === 'p', 'a repeated chapter title is dropped from the text');
+      assert(ex.chapters[1].blocks.length === 2 && ex.chapters[1].blocks[0].t === 'h1', 'a different heading is kept');
+    }
     // poems: one block per stanza, lines separated by \n
     {
       const pd = D.newDoc(); pd.title = 'Poems';

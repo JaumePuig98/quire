@@ -228,6 +228,14 @@
       const picked = chapters.filter((c) => keep.has(c.id));
       if (picked.length) chapters = picked;
     }
+    // A chapter that has a name and also starts with a Heading 1 saying the same thing would print its title twice: the copy in the text is dropped.
+    const same = (a, b) => a.trim().toLowerCase().replace(/\s+/g, ' ') === b.trim().toLowerCase().replace(/\s+/g, ' ');
+    chapters = chapters.map((c) => {
+      if (!c.title.trim()) return c;
+      const i = c.blocks.findIndex((b) => blockText(b).trim());
+      if (i < 0 || c.blocks[i].t !== 'h1' || !same(blockText(c.blocks[i]), c.title)) return c;
+      return Object.assign({}, c, { blocks: c.blocks.slice(0, i).concat(c.blocks.slice(i + 1)) });
+    });
     chapters = chapters.map((c) => {
       if (!manyChapters || c.title.trim() || doc.kind === 'journal') return c;
       const i = c.blocks.findIndex((b) => blockText(b).trim());
