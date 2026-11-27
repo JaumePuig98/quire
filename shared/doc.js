@@ -3,7 +3,7 @@
  * Model
  *   doc      = { format:'draft', version:1, title, created, modified, chapters:[chapter], notes:{id:{text,created}} }
  *   chapter  = { id, title, blocks:[block] }
- *   block    = { t:'p'|'h1'|'h2'|'quote'|'poem', runs:[run] }  (a poem block is one stanza: its lines are separated by \n)
+ *   block    = { t:'p'|'h1'|'h2'|'h3'|'h4'|'quote'|'poem', runs:[run] }  (a poem block is one stanza: its lines are separated by \n)
  *   run      = { text, b?, i?, u?, n? }          n = note id the run belongs to
  */
 (function (root, factory) {
@@ -122,7 +122,7 @@
 
   /* ---------- .draft file ---------- */
   const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
-  const BLOCK_TYPES = { p: 1, h1: 1, h2: 1, quote: 1, poem: 1 };
+  const BLOCK_TYPES = { p: 1, h1: 1, h2: 1, h3: 1, h4: 1, quote: 1, poem: 1 };
   // Reads a document from outside (a file, a backup) and returns a clean copy: whatever is damaged is repaired or dropped,
   // so a bad file can never crash the app.
   function validate(doc) {
@@ -265,7 +265,7 @@
     const titled = doc.kind === 'journal' || doc.chapters.length > 1 || (doc.chapters[0] && doc.chapters[0].title.trim() !== '');
     return { chapterHeadings: titled, shift: titled ? 1 : 0 };
   }
-  const blockLevel = (b, shift) => (b.t === 'h1' ? 1 + shift : b.t === 'h2' ? 2 + shift : 0);
+  const blockLevel = (b, shift) => (/^h[1-4]$/.test(b.t) ? +b.t[1] + shift : 0);
 
   /* ---------- Markdown ---------- */
   function escMd(s) { return s.replace(/\\/g, '\\\\').replace(/\*/g, '\\*'); }
@@ -378,7 +378,7 @@
       if (/^\s*((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/.test(line)) { flushPara(); blocks.push({ t: 'p', runs: [{ text: '* * *' }] }); continue; } // a horizontal rule is a scene break
       if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
         flushPara();
-        blocks.push({ t: m[1].length === 1 ? 'h1' : 'h2', runs: parseInlineMd(m[2]) });
+        blocks.push({ t: 'h' + Math.min(m[1].length, 4), runs: parseInlineMd(m[2]) });
       } else if ((m = line.match(/^>\s?(.*)$/))) {
         flushPara();
         const last = blocks[blocks.length - 1];

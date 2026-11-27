@@ -55,7 +55,7 @@ async function toDocx(doc, opts) {
     })),
   };
 
-  const heading = (lvl) => [null, HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3][Math.min(lvl, 3)];
+  const heading = (lvl) => [null, HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3, HeadingLevel.HEADING_4, HeadingLevel.HEADING_5][Math.min(lvl, 5)];
 
   function runsFor(block) {
     const runs = D.normalizeRuns(block.runs);
@@ -104,17 +104,7 @@ async function toDocx(doc, opts) {
       if (D.isBreak(b)) kids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 240, after: 240 }, keepNext: true, children: [new TextRun({ text: '*   *   *' })] }));
       else if (lvl) kids.push(new Paragraph({ heading: heading(lvl), children: runsFor(b) }));
       else if (b.t === 'quote') kids.push(new Paragraph({ style: 'Quote', alignment: AlignmentType.RIGHT, children: runsFor(b) }));
-      else if (b.t === 'poem') {
-        const lines = D.poemLines(b);
-        lines.forEach((ln, li) => {
-          const first = li === 0, last = li === lines.length - 1;
-          kids.push(new Paragraph({
-            alignment: AlignmentType.LEFT, indent: { left: 720 + 360, hanging: 360 }, keepLines: true, keepNext: !last,
-            spacing: { before: first && pf ? 360 : 0, after: last ? (pl ? 480 : 300) : 0 },
-            children: runsFor({ t: 'poem', runs: ln.length ? ln : [{ text: ' ' }] }),
-          }));
-        });
-      }
+      else if (b.t === 'poem') kids.push(new Paragraph({ alignment: AlignmentType.LEFT, indent: { left: 720 }, keepLines: true, spacing: { before: pf ? 360 : 0, after: pl ? 480 : 300 }, children: runsFor(b) })); // one paragraph a stanza, so the Word copy comes back as it went
       else kids.push(new Paragraph({ alignment: opts.justify === false ? undefined : AlignmentType.JUSTIFIED, children: runsFor(b) }));
     }
     bodySections.push({ show: opts.pageNumbers !== false && !c.nonum, kids: kids.length ? kids : [new Paragraph({ children: [] })] });
@@ -227,7 +217,7 @@ function toHtml(doc, opts) {
       const pl = b.t === 'poem' && !(bi < vis.length - 1 && vis[bi + 1].t === 'poem'); // last stanza
       const lvl = D.blockLevel(b, plan.shift);
       if (D.isBreak(b)) body += '<p class="sb">*&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;&nbsp;*</p>';
-      else if (lvl) body += '<h' + Math.min(lvl, 3) + '>' + inline(b) + '</h' + Math.min(lvl, 3) + '>';
+      else if (lvl) body += '<h' + Math.min(lvl, 5) + '>' + inline(b) + '</h' + Math.min(lvl, 5) + '>';
       else if (b.t === 'quote') body += '<blockquote' + (D.isCite(b) ? ' class="cite"' : '') + '>' + inline(b) + '</blockquote>';
       else if (b.t === 'poem') body += '<p class="poem' + (pf ? ' pf' : '') + (pl ? ' pl' : '') + '">' + D.poemLines(b).map((ln) => '<span class="ln">' + (inline({ runs: ln }) || '&nbsp;') + '</span>').join('') + '</p>';
       else body += '<p>' + inline(b) + '</p>';
@@ -260,11 +250,12 @@ function toHtml(doc, opts) {
     'html{font-family:' + f.css + ';font-size:11.5pt;line-height:1.55;color:#111}\n' +
     'body{margin:0;orphans:3;widows:3;hyphens:manual}\n' +
     'p{margin:0 0 .75em;orphans:3;widows:3' + (opts.justify === false ? '' : ';text-align:justify') + '}\n' +
-    'h1,h2,h3{font-weight:700;line-height:1.25;break-after:avoid;break-inside:avoid;page-break-after:avoid}\n' +
+    'h1,h2,h3,h4,h5{font-weight:700;line-height:1.25;break-after:avoid;break-inside:avoid;page-break-after:avoid}\n' +
     'h1{font-size:21pt;margin:0 0 .9em}\n' +
     'h2{font-size:15pt;margin:1.5em 0 .5em}\n' +
     'h3{font-size:12.5pt;margin:1.3em 0 .4em}\n' +
-    'h1+*,h2+*,h3+*{break-before:avoid}\n' +
+    'h4{font-size:11.5pt;margin:1.2em 0 .35em}\nh5{font-size:11pt;font-style:italic;margin:1.1em 0 .3em}\n' +
+    'h1+*,h2+*,h3+*,h4+*,h5+*{break-before:avoid}\n' +
     'p.poem{margin:0 0 1.4em 2.2em;line-height:1.5;text-align:left;hyphens:none;break-inside:avoid;page-break-inside:avoid}\np.poem .ln{display:block;white-space:pre-wrap;padding-left:1.5em;text-indent:-1.5em}\np.poem.pf{margin-top:1.8em}\np.poem.pl{margin-bottom:1.8em}\n' +
     'p.sb{text-align:center;margin:1.1em 0;break-after:avoid;page-break-after:avoid}\n' +
     'blockquote{margin:0 0 .2em 38%;padding:0;font-size:.92em;font-style:italic;text-align:right;break-inside:avoid;page-break-inside:avoid}\n' +

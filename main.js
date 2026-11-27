@@ -30,7 +30,7 @@ const DEFAULT_PREFS = {
   glow: true, glowStrength: 100, glowColor: 'accent', // strength in % of the default; color: accent (follows the accent color), a color name or white
   goal: 0, // daily word goal, 0 = off
   fullscreen: true,
-  readScope: 'chapter', centerMode: 'strict', justify: true, fmtbar: true, bookGoal: 0, autoUpdate: true, // text slides sideways so the caret stays in the middle
+  readScope: 'chapter', centerMode: 'strict', justify: true, fmtbar: true, fmtHints: true, headingDepth: 2, fmtHide: ['quote', 'poem', 'break'], bookGoal: 0, autoUpdate: true, // text slides sideways so the caret stays in the middle
   accent: 'amber', titlePage: null, // null = not chosen yet, the title page is ticked
   showSession: false, richPaste: true, pageNumbers: true, focus: 'off', streak: { last: '', count: 0, best: 0 },
   pageSize: null, margins: 'normal', // export page: null = Letter in Canada and the US, A4 elsewhere

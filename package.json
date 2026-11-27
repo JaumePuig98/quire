@@ -1,7 +1,7 @@
 {
   "name": "quire",
   "productName": "Quire",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "A distraction-free, typewriter-style writing app for books",
   "main": "main.js",
   "desktopName": "quire.desktop",

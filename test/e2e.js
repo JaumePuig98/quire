@@ -734,7 +734,13 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       three.chapters = ['A', 'B', 'C'].map((t) => Object.assign(D.newChapter(), { title: t, blocks: [{ t: 'p', runs: [{ text: 'text ' + t }] }] }));
       await page.evaluate((d) => window.__app.loadDoc(d, null), three);
       await page.keyboard.press('Control+Shift+O');
-      await page.dragAndDrop('#chapterList li:nth-child(1) .num', '#chapterList li:nth-child(3)');
+      const n1 = await page.locator('#chapterList li:nth-child(1) .num').boundingBox();
+      const t3 = await page.locator('#chapterList li:nth-child(3)').boundingBox();
+      await page.mouse.move(n1.x + n1.width / 2, n1.y + n1.height / 2); await page.mouse.down();
+      await page.mouse.move(t3.x + 30, t3.y + t3.height - 6, { steps: 10 });
+      await page.mouse.move(t3.x + 34, t3.y + t3.height - 5, { steps: 3 }); await page.waitForTimeout(600);
+      ok(await page.evaluate(() => document.querySelectorAll('#chapterList .drop-after').length === 1 && document.querySelectorAll('#chapterList .drop-before').length === 0 && document.querySelector('#chapterList li:nth-child(3)').classList.contains('drop-after')), 'dragging shows a line where the chapter will land, after the third');
+      await page.mouse.up();
       await page.waitForTimeout(400);
       ok(await page.evaluate(() => window.__app.snapshotDoc().chapters.map((c) => c.title).join('') === 'BCA'), 'dragging a chapter by its number moves it');
       await page.keyboard.press('Escape');
@@ -760,6 +766,54 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       ok(await page.evaluate(() => document.querySelector('#notebook').hidden), 'Esc closes the notebook');
       await page.keyboard.press('Control+K'); await page.click('#nbItems .nb-row'); await page.keyboard.press('Escape');
       ok(await page.evaluate(() => document.querySelector('#notebook').hidden), 'Esc also closes it from an open page');
+    }
+
+    // the formatting bar: pick the buttons and the shortcut hints; hidden buttons still work by shortcut
+    {
+      await page.evaluate((d) => window.__app.loadDoc(d, null), JSON.parse(JSON.stringify(D.newDoc())));
+      await page.keyboard.press('Control+,'); await page.waitForTimeout(300); await page.click('.st-nav [data-sec=bar]');
+      ok(await page.evaluate(() => ['quote', 'poem', 'break'].every((c) => document.querySelector('[data-cmd=' + c + ']').hidden) && !document.querySelector('[data-cmd=bold]').hidden), 'Quote, Poem and Scene break are hidden until you switch them on');
+      await page.check('[data-fmt=quote]'); await page.check('[data-fmt=poem]');
+      ok(await page.evaluate(() => !document.querySelector('[data-cmd=quote]').hidden && !document.querySelector('[data-cmd=poem]').hidden), 'switching a button on shows it in the bar');
+      await page.uncheck('[data-fmt=quote]'); await page.uncheck('[data-fmt=poem]');
+      ok(await page.evaluate(() => document.querySelector('[data-cmd=quote]').hidden && document.querySelector('[data-cmd=poem]').hidden && !document.querySelector('[data-cmd=h1]').hidden), 'unchecked buttons leave the formatting bar');
+      await page.uncheck('[data-pref=fmtHints]');
+      ok(await page.evaluate(() => getComputedStyle(document.querySelector('#fmtbar .hint')).display === 'none'), 'the shortcut hints can be turned off');
+      await page.check('[data-pref=fmtHints]');
+      for (const id of ['bold', 'italic', 'underline']) await page.uncheck('[data-fmt=' + id + ']');
+      ok(await page.evaluate(() => { const seps = [...document.querySelectorAll('#fmtbar .sep')]; return seps[0].hidden && !seps[1].hidden; }), 'a divider with nothing before it is hidden');
+      for (const id of ['h1', 'h2', 'break', 'note']) await page.uncheck('[data-fmt=' + id + ']');
+      ok(await page.evaluate(() => document.querySelector('#fmtdock').hidden), 'with every button hidden the bar goes away');
+      await page.keyboard.press('Escape');
+      await page.click('#editor'); await page.keyboard.type('A line to quote.', { delay: 4 });
+      await page.keyboard.press('Control+Shift+Q');
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].blocks[0].t === 'quote'), 'a hidden Quote button still works by its shortcut');
+      await page.keyboard.press('Control+Shift+Q');
+      await page.evaluate(() => window.__app.savePrefs({ fmtHide: ['quote', 'poem', 'break'], fmtHints: true }));
+    }
+
+    // heading levels: two by default, up to four when chosen
+    {
+      await page.evaluate((d) => window.__app.loadDoc(d, null), JSON.parse(JSON.stringify(D.newDoc())));
+      await page.click('#editor'); await page.keyboard.type('Plain', { delay: 4 });
+      await page.keyboard.press('Control+3');
+      ok(await page.evaluate(() => !document.querySelector('#editor h3')), 'Ctrl+3 does nothing while two heading levels are chosen');
+      ok(await page.evaluate(() => document.querySelector('[data-cmd=h3]').hidden), 'the Heading 3 button waits for the setting');
+      await page.keyboard.press('Control+,'); await page.waitForTimeout(300); await page.click('.st-nav [data-sec=bar]');
+      await page.selectOption('#headingDepth', '4');
+      await page.keyboard.press('Escape');
+      ok(await page.evaluate(() => !document.querySelector('[data-cmd=h3]').hidden && !document.querySelector('[data-cmd=h4]').hidden), 'choosing four levels shows the Heading 3 and 4 buttons');
+      const last = () => page.evaluate(() => { const b = window.__app.snapshotDoc().chapters[0].blocks; return b[b.length - 1].t; });
+      await page.click('#editor'); await page.keyboard.press('Control+End'); await page.keyboard.press('Enter'); await page.keyboard.type('Fresh', { delay: 4 });
+      await page.keyboard.press('Control+3');
+      ok(await last() === 'h3', 'Ctrl+3 makes a level 3 heading');
+      await page.keyboard.press('Control+4');
+      ok(await last() === 'h4', 'Ctrl+4 makes a level 4 heading');
+      await page.keyboard.press('Enter'); await page.keyboard.type('### Third', { delay: 6 });
+      ok(await last() === 'h3', '### at the start of a line makes a level 3 heading');
+      await page.evaluate(() => window.__app.savePrefs({ headingDepth: 2 }));
+      await page.keyboard.press('Enter'); await page.keyboard.type('### x', { delay: 6 });
+      ok(await last() === 'p', '### stays plain text while two levels are chosen');
     }
 
     // selection word count and the report link

@@ -114,6 +114,23 @@
     applyPrefs();
     if (patch.readScope !== undefined && reading) renderChapter();
   }
+  // The formatting bar shows the buttons you chose. Hidden ones still work through their shortcuts and Markdown.
+  const FMT_ITEMS = [['bold', 'Bold', 'Ctrl+B'], ['italic', 'Italic', 'Ctrl+I'], ['underline', 'Underline', 'Ctrl+U'], ['h1', 'Heading 1', 'Ctrl+1'], ['h2', 'Heading 2', 'Ctrl+2'], ['h3', 'Heading 3', 'Ctrl+3'], ['h4', 'Heading 4', 'Ctrl+4'],
+    ['quote', 'Quote', 'Ctrl+Shift+Q'], ['poem', 'Poem', 'Ctrl+Shift+P'], ['break', 'Scene break', 'Ctrl+Shift+Enter'], ['note', 'Note', 'Ctrl+Alt+M']];
+  const headingDepth = () => Math.min(4, Math.max(2, +prefs.headingDepth || 2));
+  function applyFmtItems() {
+    const hide = Array.isArray(prefs.fmtHide) ? prefs.fmtHide : [];
+    document.body.classList.toggle('nohints', prefs.fmtHints === false);
+    const bar = $('#fmtbar'); if (!bar) return;
+    let shown = 0, seen = false, pending = null;
+    [...bar.children].forEach((el) => {
+      if (el.classList.contains('sep')) { el.hidden = true; pending = el; return; }
+      el.hidden = hide.includes(el.dataset.cmd) || (/^h[34]$/.test(el.dataset.cmd) && +el.dataset.cmd[1] > headingDepth());
+      if (!el.hidden) { shown++; if (seen && pending) pending.hidden = false; seen = true; pending = null; } // a divider only between two groups that are showing
+    });
+    $('#fmtdock').hidden = shown === 0;
+    $$('#fmtItems input').forEach((i) => { i.checked = !hide.includes(i.dataset.fmt); i.closest('label').hidden = /^h[34]$/.test(i.dataset.fmt) && +i.dataset.fmt[1] > headingDepth(); });
+  }
   function applyPrefs() {
     const dark = prefs.theme === 'dark' || (prefs.theme === 'system' && systemDark) || (prefs.theme === 'evening' && window.Sun.isNight());
     document.body.classList.toggle('dark', dark);
@@ -127,6 +144,7 @@
       ft.title = fmtHidden ? 'Show the formatting bar (Ctrl+/)' : 'Hide the formatting bar (Ctrl+/)';
       ft.setAttribute('aria-expanded', String(!fmtHidden));
     }
+    applyFmtItems();
     const ac = ACCENTS[prefs.accent] || ACCENTS.amber;
     document.body.style.setProperty('--accent', dark ? ac.d : ac.l);
     document.body.style.setProperty('--accent-ink', dark ? ac.d : ac.ink); // darker on light backgrounds so text in the accent stays readable
@@ -229,7 +247,7 @@
         if (n.nodeType === 1 && BLOCK.has(n.tagName)) {
           flush();
           const tag = n.tagName;
-          const t = tag === 'H1' ? 'h1' : /^H[2-6]$/.test(tag) ? 'h2' : tag === 'BLOCKQUOTE' ? 'quote' : tag === 'P' && n.classList.contains('poem') ? 'poem' : inherited || 'p';
+          const t = /^H[1-6]$/.test(tag) ? 'h' + Math.min(+tag[1], 4) : tag === 'BLOCKQUOTE' ? 'quote' : tag === 'P' && n.classList.contains('poem') ? 'poem' : inherited || 'p';
           if (hasBlockChild(n)) walk(n, t);
           else push(t, n);
         } else if (n.nodeType === 1 || n.nodeType === 3) loose.push(n);
@@ -243,7 +261,7 @@
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   function blocksToHtml(blocks) {
     return blocks.map((b) => {
-      const tag = b.t === 'h1' ? 'h1' : b.t === 'h2' ? 'h2' : b.t === 'quote' ? 'blockquote' : 'p';
+      const tag = /^h[1-4]$/.test(b.t) ? b.t : b.t === 'quote' ? 'blockquote' : 'p';
       let inner = '';
       for (const r of b.runs) {
         let h = esc(r.text).replace(/\n/g, '<br>');
@@ -926,7 +944,7 @@
     let rects = range.getClientRects();
     if (rects.length) return rects[rects.length - 1];
     let el = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
-    el = el && el.closest('p,h1,h2,blockquote,div');
+    el = el && el.closest('p,h1,h2,h3,h4,blockquote,div');
     if (!el) return null;
     const r = el.getBoundingClientRect();
     return { top: r.top, height: Math.min(r.height, parseFloat(getComputedStyle(el).lineHeight) || r.height), left: r.left };
@@ -1238,7 +1256,7 @@
   }
   // formatBlock copies attributes (class, style) from the old block to the new one; keep blocks clean.
   function cleanBlocks() {
-    editor.querySelectorAll('p,h1,h2,blockquote').forEach((el) => {
+    editor.querySelectorAll('p,h1,h2,h3,h4,blockquote').forEach((el) => {
       if (el.classList.contains('live')) return;
       if (el.hasAttribute('style') && !el.style.cssText.trim()) el.removeAttribute('style');
       if (el.hasAttribute('class') && !el.className.trim()) el.removeAttribute('class');
@@ -1251,7 +1269,8 @@
     if (reading) return;
     editor.focus();
     commitHistory();
-    const tag = kind === 'h1' ? 'H1' : kind === 'h2' ? 'H2' : 'BLOCKQUOTE';
+    if (/^h[34]$/.test(kind) && +kind[1] > headingDepth()) return;
+    const tag = /^h[1-4]$/.test(kind) ? kind.toUpperCase() : 'BLOCKQUOTE';
     const b = currentBlock();
     const isThis = kind === 'quote' ? inQuote() : b && b.tagName === tag;
     if (isThis) {
@@ -1273,7 +1292,7 @@
     if (inQuote()) { document.execCommand('formatBlock', false, 'p'); if (inQuote()) document.execCommand('outdent'); }
     const sel = getSelection();
     if (!sel.rangeCount) return;
-    const blocks = [...editor.querySelectorAll('p,h1,h2,blockquote')].filter((el) => sel.containsNode(el, true));
+    const blocks = [...editor.querySelectorAll('p,h1,h2,h3,h4,blockquote')].filter((el) => sel.containsNode(el, true));
     const targets = blocks.length ? blocks : [currentBlock()].filter(Boolean);
     const caretBlock = currentBlock();
     if (on && targets.length > 1) {
@@ -1335,6 +1354,8 @@
     const b = currentBlock();
     set('h1', b && b.tagName === 'H1');
     set('h2', b && b.tagName === 'H2');
+    set('h3', b && b.tagName === 'H3');
+    set('h4', b && b.tagName === 'H4');
     set('quote', inQuote());
     set('poem', inPoem());
     const n = noteAtCaret();
@@ -1913,10 +1934,24 @@
       if (kindOf() !== 'journal' && doc.chapters.length > 1) {
         num.draggable = true; num.classList.add('grab'); num.title = 'Drag to move';
         num.addEventListener('dragstart', (e) => { dragFrom = i; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'quire-chapter'); e.dataTransfer.setDragImage(li, 12, 12); li.classList.add('dragging'); });
-        num.addEventListener('dragend', () => { dragFrom = null; ol.querySelectorAll('.dragging,.over').forEach((x) => x.classList.remove('dragging', 'over')); });
-        li.addEventListener('dragover', (e) => { if (dragFrom !== null) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; li.classList.add('over'); } });
-        li.addEventListener('dragleave', (e) => { if (!li.contains(e.relatedTarget)) li.classList.remove('over'); });
-        li.addEventListener('drop', (e) => { if (dragFrom === null) return; e.preventDefault(); const from = dragFrom; dragFrom = null; moveChapterTo(from, i); });
+        const clearMarks = () => ol.querySelectorAll('.dragging,.drop-before,.drop-after').forEach((x) => x.classList.remove('dragging', 'drop-before', 'drop-after'));
+        // where the dragged chapter would land: before or after this one, by which half the pointer is in; a line shows the gap
+        const gapAt = (e) => { const r = li.getBoundingClientRect(); return e.clientY > r.top + r.height / 2 ? i + 1 : i; };
+        num.addEventListener('dragend', () => { dragFrom = null; clearMarks(); });
+        li.addEventListener('dragover', (e) => {
+          if (dragFrom === null) return;
+          e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+          ol.querySelectorAll('.drop-before,.drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+          const gap = gapAt(e);
+          if (gap !== dragFrom && gap !== dragFrom + 1) li.classList.add(gap === i ? 'drop-before' : 'drop-after'); // no line where the chapter already is
+        });
+        li.addEventListener('dragleave', (e) => { if (!li.contains(e.relatedTarget)) li.classList.remove('drop-before', 'drop-after'); });
+        li.addEventListener('drop', (e) => {
+          if (dragFrom === null) return;
+          e.preventDefault();
+          const from = dragFrom, gap = gapAt(e); dragFrom = null; clearMarks();
+          moveChapterTo(from, gap > from ? gap - 1 : gap);
+        });
       }
       if (goal) {
         const pct = Math.min(100, Math.round((count / goal) * 100));
@@ -1934,7 +1969,7 @@
         if (!t) continue;
         const nameLine = first && !c.title.trim() && b.t === 'h1'; // this heading already is the chapter's name
         first = false;
-        if ((b.t === 'h1' || b.t === 'h2') && !nameLine) heads.push({ t, level: b.t });
+        if (/^h[1-4]$/.test(b.t) && !nameLine) heads.push({ t, level: b.t });
       }
       if (heads.length) {
         const toc = document.createElement('ul'); toc.className = 'toc';
@@ -2047,6 +2082,7 @@
     $('#nbOpen').hidden = k !== 'book';
     if (k !== 'book' && !$('#notebook').hidden) $('#notebook').hidden = true;
     nbCount();
+    if (!$('#notebook').hidden) nbRender(); // a different book was opened: show its pages, not the last one's
     $('#navJournal').hidden = k !== 'journal';
     if (k !== 'journal' && $('#navJournal').classList.contains('on')) { const first = $('.st-nav button'); if (first) first.click(); }
     if (k === 'journal') { $('#jDate').value = D.DATE_FMTS.includes(doc.dateFmt) ? doc.dateFmt : 'long'; $('#jTime').value = D.TIME_FMTS.includes(doc.timeFmt) ? doc.timeFmt : '24'; }
@@ -2561,6 +2597,8 @@
       case 'u': e.preventDefault(); command('underline'); break;
       case '1': e.preventDefault(); command('h1'); break;
       case '2': e.preventDefault(); command('h2'); break;
+      case '3': e.preventDefault(); command('h3'); break;
+      case '4': e.preventDefault(); command('h4'); break;
       case '0': e.preventDefault(); if (!reading) { document.execCommand('formatBlock', false, 'p'); if (inQuote()) document.execCommand('outdent'); afterEdit(); } break;
       case 'q': if (shift) { e.preventDefault(); command('quote'); } break;
       case 'p': if (shift) { e.preventDefault(); command('poem'); } break;
@@ -2650,14 +2688,14 @@
   function markdownBlock() {
     const b = currentBlock();
     if (!b || b.tagName !== 'P') return false;
-    const m = /^(#{1,2}|>)[ \u00a0]$/.exec(b.textContent);
+    const m = new RegExp('^(#{1,' + headingDepth() + '}|>)[ \\u00a0]$').exec(b.textContent);
     if (!m) return false;
     const rg = document.createRange();
     rg.selectNodeContents(b);
     const sel = getSelection();
     sel.removeAllRanges(); sel.addRange(rg);
     document.execCommand('delete');
-    setBlock(m[1] === '#' ? 'h1' : m[1] === '##' ? 'h2' : 'quote');
+    setBlock(m[1] === '>' ? 'quote' : 'h' + m[1].length);
     return true;
   }
   // **bold**, __bold__, *italic*, _italic_: converted when the closing mark is typed.
@@ -2757,7 +2795,7 @@
   function cleanPasteHtml(html) {
     const dom = new DOMParser().parseFromString(html, 'text/html');
     const SKIP = new Set(['script', 'style', 'head', 'meta', 'title', 'img', 'svg', 'noscript', 'link', 'object', 'iframe', 'button', 'input', 'select', 'textarea']);
-    const BLOCK = { p: 'p', div: 'p', li: 'p', tr: 'p', h1: 'h1', h2: 'h2', h3: 'h2', h4: 'h2', h5: 'h2', h6: 'h2', blockquote: 'quote' };
+    const BLOCK = { p: 'p', div: 'p', li: 'p', tr: 'p', h1: 'h1', h2: 'h2', h3: 'h3', h4: 'h4', h5: 'h4', h6: 'h4', blockquote: 'quote' };
     const blocks = [];
     let cur = null, fancy = false;
     const start = (t) => { cur = { t, html: '', text: '' }; blocks.push(cur); };
@@ -2835,6 +2873,7 @@
   // drop a .draft, .md or .txt file on the window to open it
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', async (e) => {
+    if (!(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) && e.target.closest && e.target.closest('input, textarea')) return; // moving text inside a text box is the box's own business
     e.preventDefault();
     const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     const p = f && window.api.pathForFile(f);
@@ -3011,6 +3050,18 @@
   });
 
   // Settings controls
+  FMT_ITEMS.forEach(([id, label, keys]) => {
+    const l = document.createElement('label'); l.className = 'check';
+    const i = document.createElement('input'); i.type = 'checkbox'; i.dataset.fmt = id; i.checked = true;
+    const k = document.createElement('span'); k.className = 'hint'; k.textContent = keys;
+    l.append(i, ' ' + label + ' ', k);
+    i.addEventListener('change', () => {
+      const hide = (Array.isArray(prefs.fmtHide) ? prefs.fmtHide : []).filter((x) => x !== id);
+      if (!i.checked) hide.push(id);
+      savePrefs({ fmtHide: hide });
+    });
+    $('#fmtItems').appendChild(l);
+  });
   $$('[data-pref]').forEach((el) => {
     const k = el.dataset.pref;
     if (el.classList.contains('seg') || el.classList.contains('swatches')) el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) savePrefs({ [k]: b.dataset.v }); });

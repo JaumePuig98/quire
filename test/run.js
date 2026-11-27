@@ -97,7 +97,7 @@ const X = require('../exporters.js');
     const t0 = back.chapters[0].blocks[1].runs;
     assert.ok(t0.some((r) => r.b && r.text === 'bold') && t0.some((r) => r.i && r.text === 'italic'), 'bold and italic survive');
     assert.ok(D.blockText(back.chapters[1].blocks[2]).includes('caf\u00e9 & <tags>.'), 'special characters survive');
-    assert.ok(back.chapters[1].blocks.some((b) => b.t === 'h2'), 'Heading 2 survives');
+    assert.ok(back.chapters[1].blocks.some((b) => b.t === 'h3'), 'a sub-heading keeps its depth (the Word copy puts it one level down under the chapter headings)');
     assert.ok(back.chapters[0].blocks.some((b) => b.t === 'quote'), 'quote style survives');
     assert.doesNotThrow(() => D.parseDraft(D.serializeDraft(back)));
     // compile: chosen chapters only, title page
@@ -172,6 +172,20 @@ const X = require('../exporters.js');
     assert(emd.includes('# Titled but empty'), 'a chapter with a title stays even when empty');
     assert(!D.toPlainText(ed, {}).includes('UNTITLED CHAPTER'), 'plain text skips an untitled empty chapter');
     assert(D.forExport({ chapters: [{ id: 'z', title: '', blocks: [P('')] }] }, {}).chapters.length === 1, 'a book that is all empty still exports one chapter');
+    // headings go down to level 4
+    {
+      const H = (t, x) => ({ t, runs: [{ text: x }] });
+      const hd = { id: 'h1', title: 'T', subtitle: '', author: '', extra: '', created: sd.created, modified: sd.modified, notes: {}, chapters: [
+        { id: 'a', title: 'One', blocks: [H('h1', 'A'), H('h2', 'B'), H('h3', 'C'), H('h4', 'D'), P('x')] }, { id: 'b', title: 'Two', blocks: [P('y')] }] };
+      const hmd = D.toMarkdown(hd, {});
+      assert(hmd.includes('## A') && hmd.includes('### B') && hmd.includes('#### C') && hmd.includes('##### D'), 'deep headings keep their depth in Markdown');
+      const back = D.parseDraft(D.serializeDraft(hd));
+      assert(back.chapters[0].blocks.map((b) => b.t).join() === 'h1,h2,h3,h4,p', 'headings 3 and 4 survive saving and opening');
+      const imp = D.parseDraft ? D.fromMarkdown ? D.fromMarkdown('#### Deep\n\ntext') : null : null;
+      if (imp) assert(imp.chapters[0].blocks[0].t === 'h4', 'a #### line in a Markdown file is heading 4');
+      const html = await new Promise((res) => res(X.toHtml ? X.toHtml(hd, {}) : ''));
+      if (html) assert(/<h4>C<\/h4>/.test(html) && /<h5>D<\/h5>/.test(html), 'deep headings export as HTML headings');
+    }
     // page size and margins
     const g = E.pageGeometry({ pageSize: 'a5', margins: 'narrow' });
     assert(g && g.size.width < E.pageGeometry({ pageSize: 'a4', margins: 'narrow' }).size.width, 'A5 is narrower than A4');
@@ -231,6 +245,13 @@ const X = require('../exporters.js');
     assert.strictEqual(DD.compare(base, r.doc).rows.filter((x) => x.kind !== 'same').length, 0, 'an untouched Word copy shows no differences');
     assert.deepStrictEqual(noteIds(r.doc), ['n1', 'n2'], 'notes stay');
     assert(r.doc.chapters[1].goal === 500 && r.doc.chapters[0].nonum === true && r.doc.chapters.length === 4, 'targets, page-number settings and the empty chapter stay');
+    // 1b. headings down to level 4 come back from the Word copy as they were
+    {
+      const hb = mk();
+      hb.chapters[1].blocks = [{ t: 'h1', runs: [{ text: 'Part' }] }, { t: 'h2', runs: [{ text: 'Section' }] }, { t: 'h3', runs: [{ text: 'Sub' }] }, { t: 'h4', runs: [{ text: 'Deep' }] }, P('Body text here')];
+      const rh = await through(hb, hb);
+      assert.strictEqual(rh.doc.chapters[1].blocks.map((b) => b.t).join(), 'h1,h2,h3,h4,p', 'headings 3 and 4 survive the Word copy');
+    }
     // 2. edits on the phone: reword one paragraph with a note, delete one, add one, add a chapter, rename a chapter
     const ed = mk();
     ed.chapters[1].blocks[3] = P('After the break', { text: ' second note changed a lot', n: 'n2' }); // note anchor text changed
@@ -258,6 +279,15 @@ const X = require('../exporters.js');
     r = await through(one, JSON.parse(JSON.stringify(one)));
     assert.strictEqual(r.doc.chapters.length, 1, 'a single untitled chapter stays one chapter');
     assert(r.doc.chapters[0].blocks.map((b) => b.t).join(',') === 'h1,p,h2,p', 'heading levels survive in a single chapter book (' + r.doc.chapters[0].blocks.map((b) => b.t).join(',') + ')');
+    // 5. a poem in the Word copy: untouched it comes back as it was, and an edited line does not break the stanzas
+    const pm = mk(); pm.chapters[0].blocks.push({ t: 'poem', runs: [{ text: 'Roses are red\nViolets are blue' }] }, { t: 'poem', runs: [{ text: 'Second stanza\n  indented line' }] }, P('After the poem.'));
+    base = JSON.parse(JSON.stringify(pm));
+    r = await through(JSON.parse(JSON.stringify(pm)), base);
+    assert.strictEqual(DD.compare(base, r.doc).rows.filter((x) => x.kind !== 'same').length, 0, 'an untouched Word copy with a poem shows no differences');
+    assert(r.doc.chapters[0].blocks.filter((b) => b.t === 'poem').length === 2 && r.doc.chapters[0].blocks.find((b) => b.t === 'poem').runs[0].text === 'Roses are red\nViolets are blue', 'poems keep their stanzas and lines after a round trip');
+    const pe = JSON.parse(JSON.stringify(pm)); pe.chapters[0].blocks[1].runs[0].text = 'Roses are red\nViolets are violet';
+    r = await through(pe, JSON.parse(JSON.stringify(pm)));
+    assert(D.blockText(r.doc.chapters[0].blocks.find((b) => b.t === 'poem')) === 'Roses are red\nViolets are violet' && r.doc.chapters[0].blocks.filter((b) => b.t === 'poem').length === 2, 'an edited poem line comes back as one stanza, not as loose paragraphs');
     console.log('ok word copy merge');
   }
 

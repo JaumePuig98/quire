@@ -53,7 +53,7 @@ You can also drag a file onto the window to open it.
 | Action | Shortcut |
 |---|---|
 | Bold / italic / underline | Ctrl+B / Ctrl+I / Ctrl+U |
-| Heading 1 / heading 2 / normal text | Ctrl+1 / Ctrl+2 / Ctrl+0 (press again to turn off) |
+| Heading 1 to 4 / normal text | Ctrl+1 to Ctrl+4 / Ctrl+0 (press again to turn off; levels 3 and 4 need Settings, Formatting bar) |
 | Quote | Ctrl+Shift+Q (press again to turn off) |
 | Poem (lines kept as written, stanzas separated by an empty line) | Ctrl+Shift+P (press again to turn off) |
 | Scene break (a centered * * * between two parts of a chapter) | Ctrl+Shift+Enter |
@@ -81,7 +81,9 @@ Markdown shortcuts work while you type: `# ` at the start of a line makes a head
 
 **Quotes** are set like an epigraph in a book: narrower, a little smaller and to the right. Enter keeps writing in the quote. Enter on an empty line, or after the author line, leaves it. A quote line that starts with a dash is the author.
 
-**Poems** keep every line break. Enter ends a line, Enter on an empty line starts the next stanza, and Enter in an empty stanza goes back to prose. Poems are left aligned and set in from the margin, and all exports keep them that way. Spaces at the start of a line are kept, so you can indent a line, and a line too long to fit wraps with a hanging indent so it still reads as one line. Select several paragraphs and press Poem to turn them into one stanza (a blank paragraph starts the next stanza), and use Tab and Shift+Tab to indent a line and take the indent back.
+**Poems** keep every line break. Enter ends a line, Enter on an empty line starts the next stanza, and Enter in an empty stanza goes back to prose. Poems are left aligned and set in from the margin, and the exports keep them that way. Spaces at the start of a line are kept, so you can indent a line. In the editor, PDF, HTML and EPUB a line too long to fit wraps with a hanging indent so it still reads as one line; the Word copy keeps each stanza as one paragraph so it can be brought back into Quire. Select several paragraphs and press Poem to turn them into one stanza (a blank paragraph starts the next stanza), and use Tab and Shift+Tab to indent a line and take the indent back.
+
+**Formatting bar.** In Settings, Formatting bar, choose which buttons show and whether their shortcuts appear beside them. Quote, Poem and Scene break start hidden. The same section sets how many heading levels you use (2 by default, up to 4): Ctrl+1 to Ctrl+4, or #, ##, ### and #### at the start of a line. Hidden buttons still work through their shortcuts and Markdown.
 
 **Notebook.** A book can keep notes about its world: places, people, religions, calendars, anything you keep inventing. Press **Ctrl+K** (or use Notebook in the Chapters panel) to open a panel on the right. Type to search by title, category or text, press Enter to open the first match, and keep writing while it stays open. A page has a title, a category you choose, and free text. Pages are saved inside the book file, are never exported, and are not counted in word totals. Ctrl+K or Esc closes the panel. Journals and single texts do not have a notebook. Use it for a poem inside any chapter, such as a prologue.
 

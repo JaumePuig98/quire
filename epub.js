@@ -58,9 +58,9 @@ const CSS = (family, justify) =>
   'html{font-family:' + family + '}\n' +
   'body{margin:0 5%;line-height:1.5}\n' +
   'p{margin:0;text-indent:1.4em' + (justify ? ';text-align:justify' : '') + '}\n' +
-  'h1+p,h2+p,h3+p,blockquote+p,p.first{text-indent:0}\n' +
-  'h1,h2,h3{font-weight:bold;line-height:1.25;page-break-after:avoid;break-after:avoid}\n' +
-  'h1{font-size:1.6em;margin:1.2em 0 1em}h2{font-size:1.25em;margin:1.4em 0 .6em}h3{font-size:1.1em;margin:1.2em 0 .5em}\n' +
+  'h1+p,h2+p,h3+p,h4+p,h5+p,blockquote+p,p.first{text-indent:0}\n' +
+  'h1,h2,h3,h4,h5{font-weight:bold;line-height:1.25;page-break-after:avoid;break-after:avoid}\n' +
+  'h1{font-size:1.6em;margin:1.2em 0 1em}h2{font-size:1.25em;margin:1.4em 0 .6em}h3{font-size:1.1em;margin:1.2em 0 .5em}h4{font-size:1em;margin:1.1em 0 .4em}h5{font-size:1em;font-style:italic;margin:1em 0 .4em}\n' +
   'blockquote{margin:1em 0 .2em 25%;font-style:italic;text-align:right;text-indent:0}blockquote.cite{font-style:normal}\n' +
   '.titlepage{text-align:center;margin-top:25%}.titlepage h1{font-size:2.2em;margin:0 0 .4em}.subtitle{font-style:italic;font-size:1.2em;text-align:center;text-indent:0;margin:0 0 2em}.byline{font-size:1.1em;text-align:center;text-indent:0}.extra{color:#555;text-align:center;text-indent:0}\n' +
   'p.poem{margin:0 0 1.4em 2em;text-indent:0;text-align:left;line-height:1.5}\np.poem .ln{display:block;white-space:pre-wrap;padding-left:1.5em;text-indent:-1.5em}\np.poem.pf{margin-top:1.8em}\np.poem.pl{margin-bottom:1.8em}\n' +
@@ -124,7 +124,7 @@ function toEpub(doc, opts) {
       const pl = b.t === 'poem' && !(bi < vis.length - 1 && vis[bi + 1].t === 'poem'); // last stanza
       const lvl = D.blockLevel(b, plan.shift);
       if (D.isBreak(b)) body += '<p class="sb">*&#160;&#160;&#160;*&#160;&#160;&#160;*</p>\n';
-      else if (lvl) body += '<h' + Math.min(lvl, 3) + '>' + inline(b) + '</h' + Math.min(lvl, 3) + '>\n';
+      else if (lvl) body += '<h' + Math.min(lvl, 5) + '>' + inline(b) + '</h' + Math.min(lvl, 5) + '>\n';
       else if (b.t === 'poem') body += '<p class="poem' + (pf ? ' pf' : '') + (pl ? ' pl' : '') + '">' + D.poemLines(b).map((ln) => '<span class="ln">' + (inline({ runs: ln }) || '&#160;') + '</span>').join('') + '</p>\n';
       else if (b.t === 'quote') body += '<blockquote' + (D.isCite(b) ? ' class="cite"' : '') + '>' + inline(b) + '</blockquote>\n';
       else body += '<p>' + inline(b) + '</p>\n';

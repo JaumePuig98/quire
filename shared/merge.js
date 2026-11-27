@@ -13,6 +13,7 @@
   // Text and formatting of a block, ignoring notes and what a round trip through Word or Google Docs may change.
   function key(b) {
     const quote = b.t === 'quote';
+    const kind = b.t === 'poem' ? 'p' : b.t; // the Word copy has no poem type: a stanza comes back as a paragraph with line breaks
     let runs = D.normalizeRuns((b.runs || []).map((r) => {
       const x = { text: collapse(r.text) };
       if (r.b) x.b = 1;
@@ -22,7 +23,7 @@
     }));
     if (runs.length) { runs[0].text = runs[0].text.replace(/^ +/, ''); runs[runs.length - 1].text = runs[runs.length - 1].text.replace(/ +$/, ''); }
     runs = runs.filter((r) => r.text);
-    return b.t + '\u0001' + runs.map((r) => (r.b ? 'b' : '') + (r.i ? 'i' : '') + (r.u ? 'u' : '') + ':' + r.text).join('\u0002');
+    return kind + '\u0001' + runs.map((r) => (r.b ? 'b' : '') + (r.i ? 'i' : '') + (r.u ? 'u' : '') + ':' + r.text).join('\u0002');
   }
   const isEmpty = (b) => !D.blockText(b).trim();
 
@@ -34,7 +35,7 @@
     return b;
   }
 
-  // raw: [{t:'p'|'quote'|'h1'|'h2', lvl?, runs}] from the Word file, headings with their Word level.
+  // raw: [{t:'p'|'quote'|'h1'..'h4', lvl?, runs}] from the Word file, headings with their Word level.
   // chaptered: the book was exported with one Heading 1 per chapter (several chapters, or a titled single one).
   function chaptersFromRaw(raw, chaptered) {
     const out = [];
@@ -46,7 +47,7 @@
           if (title === 'Untitled chapter') title = '';
           c = { title, blocks: [] }; out.push(c); continue;
         }
-        const t = chaptered ? (r.lvl === 2 ? 'h1' : 'h2') : (r.lvl === 1 ? 'h1' : 'h2');
+        const t = 'h' + Math.min(4, Math.max(1, chaptered ? r.lvl - 1 : r.lvl)); // chapters took Heading 1, so every heading sits one level lower
         if (!c) { c = { title: '', blocks: [] }; out.push(c); }
         c.blocks.push(cleanBlock(t, r.runs));
         continue;
@@ -116,6 +117,7 @@
       for (const d of dels) {
         if (a < adds.length && similar(O[d], newBlocks[adds[a]])) {
           const r = carryNotes(O[d], newBlocks[adds[a]]);
+          if (O[d].t === 'poem' && r.block.t === 'p') r.block.t = 'poem'; // an edited stanza is still a stanza
           stats.notesMoved += r.moved; stats.edited++;
           out.push(r.block, ...trail[d]); a++;
         } else stats.removed++; // a deleted paragraph takes its notes with it (the History snapshot keeps them)

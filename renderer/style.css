@@ -49,10 +49,12 @@ button{font:inherit;color:inherit}
   caret-color:rgb(var(--accent));white-space:pre-wrap;word-wrap:break-word;
 }
 #editor p,.lineWrap p{margin:0 0 var(--pg,.6em);text-indent:var(--indent,0)}
-#editor h1,#editor h2,.lineWrap h1,.lineWrap h2{margin:var(--hb,.9em) 0 var(--ha,.4em);line-height:1.25;font-weight:min(900,calc(var(--fw,400) + 300))}
+#editor h1,#editor h2,#editor h3,#editor h4,.lineWrap h1,.lineWrap h2,.lineWrap h3,.lineWrap h4{margin:var(--hb,.9em) 0 var(--ha,.4em);line-height:1.25;font-weight:min(900,calc(var(--fw,400) + 300))}
 #editor b,#editor strong,.lineWrap b,.lineWrap strong{font-weight:min(900,calc(var(--fw,400) + 300))}
 #editor h1,.lineWrap h1{font-size:1.55em}
 #editor h2,.lineWrap h2{font-size:1.25em}
+#editor h3,.lineWrap h3{font-size:1.1em}
+#editor h4,.lineWrap h4{font-size:1em;font-style:italic}
 /* quotes: like an epigraph in a book - narrower, smaller, set to the right; a line starting with a dash is the author */
 #editor blockquote,.lineWrap blockquote{margin:0 0 .15em auto;width:62%;padding:0;font-size:.92em;line-height:1.6;font-style:italic;text-align:right!important;hyphens:none}
 #editor blockquote.cite,.lineWrap blockquote.cite{font-style:normal;text-align:right;font-size:.86em;color:rgb(var(--muted))}
@@ -404,6 +406,8 @@ body.fmthidden #fmtToggle{font-size:0}
 #chapterList .toc button{display:block;width:100%;height:auto;padding:3px 6px;border:0;border-radius:5px;background:transparent;color:rgb(var(--muted));font:12px/1.35 var(--sans);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 #chapterList .toc button:hover,#chapterList .toc button:focus-visible{background:rgb(var(--ink)/.08);color:rgb(var(--ink))}
 #chapterList .toc .lv-h2{padding-left:16px}
+#chapterList .toc .lv-h3{padding-left:26px}
+#chapterList .toc .lv-h4{padding-left:36px}
 #chapterList .toc{box-sizing:border-box;width:100%;min-width:0}
 #chapterList .toc li{min-width:0}
 #chapterList .toc button{box-sizing:border-box;min-width:0;max-width:100%}
@@ -506,7 +510,10 @@ body.justify #editor p.poem,body.justify .lineWrap p.poem{text-align:left!import
 /* chapters can be dragged by their number */
 #chapterList .num.grab{cursor:grab}
 #chapterList li.dragging{opacity:.45}
-#chapterList li.over{border-color:rgb(var(--accent));background:rgb(var(--accent)/.08)}
+#chapterList li{position:relative}
+#chapterList li.drop-before::before,#chapterList li.drop-after::after{content:'';position:absolute;left:6px;right:6px;height:2px;border-radius:2px;background:rgb(var(--accent));pointer-events:none}
+#chapterList li.drop-before::before{top:-3px}
+#chapterList li.drop-after::after{bottom:-3px}
 
 /* the notebook: a panel on the right to look things up and keep writing */
 #notebook{position:fixed;z-index:7;right:12px;top:56px;bottom:72px;width:min(360px,92vw);padding:14px;display:flex;flex-direction:column;overflow:hidden;
@@ -525,3 +532,8 @@ body.justify #editor p.poem,body.justify .lineWrap p.poem{text-align:left!import
 #nbItems .nb-empty{font-size:12.5px;color:rgb(var(--muted));padding:8px 2px;line-height:1.5}
 .nb-foot{display:flex;align-items:center;justify-content:space-between}
 #nbBack{align-self:flex-start;padding:4px 6px}
+
+/* formatting bar: choose the buttons, and whether the shortcuts show next to them */
+body.nohints #fmtbar .hint{display:none}
+#fmtdock[hidden]{display:none}
+#fmtItems{display:flex;flex-direction:column;gap:2px;margin:6px 0 4px}

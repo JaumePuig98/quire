@@ -44,7 +44,7 @@ function htmlToBlocks(html, keepLevels) {
       continue;
     }
     const closing = !!m[1], tag = m[2].toLowerCase(), attrs = m[3] || '';
-    if (/^h[1-6]$/.test(tag)) { if (closing) close(); else { close(); open(tag === 'h1' ? 'h1' : 'h2'); if (keepLevels) cur.lvl = +tag[1]; } }
+    if (/^h[1-6]$/.test(tag)) { if (closing) close(); else { close(); open('h' + Math.min(+tag[1], 4)); if (keepLevels) cur.lvl = +tag[1]; } }
     else if (tag === 'p') {
       if (closing) close();
       else { close(); if (/doc-title/.test(attrs)) { inTitle = true; open('p'); } else open('p'); }
@@ -52,7 +52,7 @@ function htmlToBlocks(html, keepLevels) {
     else if (tag === 'blockquote') { closing ? close() : (close(), open('quote')); }
     else if (tag === 'li' || tag === 'tr') { closing ? close() : (close(), open('p')); }
     else if (tag === 'td' || tag === 'th') { if (closing && cur) cur.runs.push({ text: ' ' }); }
-    else if (tag === 'br') { if (cur) cur.runs.push({ text: ' ' }); }
+    else if (tag === 'br') { if (cur) cur.runs.push({ text: '\n' }); } // a line break stays a line break (poems, addresses)
     else if (tag === 'strong' || tag === 'b') fmt.b += closing ? -1 : 1;
     else if (tag === 'em' || tag === 'i') fmt.i += closing ? -1 : 1;
     else if (tag === 'u') fmt.u += closing ? -1 : 1;
