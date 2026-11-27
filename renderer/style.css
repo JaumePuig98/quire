@@ -498,7 +498,7 @@ input.when-edit{flex:1;min-width:0;font-size:12.5px}
 
 /* a poem: left aligned, lines kept as written, set in from the margin. Lines are close together, stanzas are
    a little further apart, and the whole poem has room before and after, like a quote */
-#editor p.poem,.lineWrap p.poem{margin:0 0 calc(var(--qg,.9em)*1.5) 3.5em;padding:0;text-indent:-1.5em each-line;text-align:left!important;hyphens:none;line-height:1.5}
+#editor p.poem,.lineWrap p.poem{margin:0 0 calc(var(--qg,.9em)*1.5) 2em;padding:0 0 0 1.5em;text-indent:-1.5em each-line;text-align:left!important;hyphens:none;line-height:1.5}
 #editor :not(.poem)+p.poem{margin-top:calc(var(--qg,.9em)*2)}
 #editor p.poem:has(+ :not(.poem)),#editor p.poem:last-child{margin-bottom:calc(var(--qg,.9em)*2)}
 body.justify #editor p.poem,body.justify .lineWrap p.poem{text-align:left!important;hyphens:none}
