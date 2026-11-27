@@ -1271,9 +1271,29 @@
     if (inQuote()) { document.execCommand('formatBlock', false, 'p'); if (inQuote()) document.execCommand('outdent'); }
     const sel = getSelection();
     if (!sel.rangeCount) return;
-    const blocks = [...editor.querySelectorAll('p,h1,h2,blockquote')].filter((el) => sel.containsNode(el, true) && !el.classList.contains('live'));
+    const blocks = [...editor.querySelectorAll('p,h1,h2,blockquote')].filter((el) => sel.containsNode(el, true));
     const targets = blocks.length ? blocks : [currentBlock()].filter(Boolean);
-    targets.forEach((el) => {
+    const caretBlock = currentBlock();
+    if (on && targets.length > 1) {
+      // several paragraphs become one stanza: their lines are joined, a blank paragraph (or a heading) starts the next stanza
+      let group = [];
+      const flush = () => {
+        if (group.length) {
+          const first = group[0];
+          group.slice(1).forEach((el) => { first.appendChild(document.createElement('br')); while (el.firstChild) first.appendChild(el.firstChild); el.remove(); });
+          first.querySelectorAll('br + br').forEach((x) => { if (!x.nextSibling) x.remove(); });
+          first.classList.remove('sbreak', 'cite'); first.classList.add('poem');
+        }
+        group = [];
+      };
+      targets.forEach((el) => {
+        const blank = !el.textContent.trim();
+        if (blank || /^H[1-6]$/.test(el.tagName)) { flush(); if (blank && el !== caretBlock) el.remove(); return; }
+        if (el.tagName !== 'P') { const p = document.createElement('p'); p.innerHTML = el.innerHTML; el.replaceWith(p); el = p; }
+        group.push(el);
+      });
+      flush();
+    } else targets.forEach((el) => {
       if (on && el.tagName !== 'P') { const p = document.createElement('p'); p.innerHTML = el.innerHTML; el.replaceWith(p); el = p; }
       if (el.tagName === 'P') { el.classList.remove('sbreak', 'cite'); el.classList.toggle('poem', on); }
     });
@@ -1887,6 +1907,15 @@
       const uw = unitWord().toLowerCase();
       tools.querySelectorAll('button').forEach((b) => { b.title = b.title.replace('chapter', uw); if (b.getAttribute('aria-label')) b.setAttribute('aria-label', b.getAttribute('aria-label').replace('chapter', uw)); });
       li.append(top, tools);
+      // books and texts: drag the number to move a chapter (the arrow buttons stay for the keyboard)
+      if (kindOf() !== 'journal' && doc.chapters.length > 1) {
+        num.draggable = true; num.classList.add('grab'); num.title = 'Drag to move';
+        num.addEventListener('dragstart', (e) => { dragFrom = i; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'quire-chapter'); e.dataTransfer.setDragImage(li, 12, 12); li.classList.add('dragging'); });
+        num.addEventListener('dragend', () => { dragFrom = null; ol.querySelectorAll('.dragging,.over').forEach((x) => x.classList.remove('dragging', 'over')); });
+        li.addEventListener('dragover', (e) => { if (dragFrom !== null) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; li.classList.add('over'); } });
+        li.addEventListener('dragleave', (e) => { if (!li.contains(e.relatedTarget)) li.classList.remove('over'); });
+        li.addEventListener('drop', (e) => { if (dragFrom === null) return; e.preventDefault(); const from = dragFrom; dragFrom = null; moveChapterTo(from, i); });
+      }
       if (goal) {
         const pct = Math.min(100, Math.round((count / goal) * 100));
         const bar = document.createElement('div'); bar.className = 'ch-bar' + (count >= goal ? ' done' : '');
@@ -1980,13 +2009,16 @@
     if (prefs.bookGoal > 0) t += ' \u00b7 ' + Math.min(100, Math.round((total / prefs.bookGoal) * 100)) + '% of ' + prefs.bookGoal.toLocaleString();
     el.textContent = t;
   }
-  function moveChapter(i, d) {
+  let dragFrom = null;
+  function moveChapter(i, d) { moveChapterTo(i, i + d); }
+  // Moves chapter i to position j, the others shift along. The chapter being edited stays the current one.
+  function moveChapterTo(i, j) {
+    if (i === j || i < 0 || j < 0 || i >= doc.chapters.length || j >= doc.chapters.length) return;
     syncFromDom();
-    const j = i + d;
-    if (j < 0 || j >= doc.chapters.length) return;
-    [doc.chapters[i], doc.chapters[j]] = [doc.chapters[j], doc.chapters[i]];
-    [wordCounts[i], wordCounts[j]] = [wordCounts[j], wordCounts[i]];
-    if (cur === i) cur = j; else if (cur === j) cur = i;
+    const curCh = doc.chapters[cur];
+    doc.chapters.splice(j, 0, doc.chapters.splice(i, 1)[0]);
+    wordCounts.splice(j, 0, wordCounts.splice(i, 1)[0]);
+    cur = doc.chapters.indexOf(curCh);
     renderOutline(); markDirty();
   }
   async function deleteChapter(i) {
@@ -2475,6 +2507,19 @@
     if (nb) nb.classList.remove('cite');
     afterEdit();
   });
+  // In a poem Tab indents the line (spaces are kept in the text and in every export) and Shift+Tab takes the indent back.
+  editor.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || reading || !inPoem() || !getSelection().isCollapsed) return;
+    if (nameTip || e.defaultPrevented) return;
+    e.preventDefault();
+    if (!e.shiftKey) { document.execCommand('insertText', false, '    '); afterEdit(); return; }
+    const b = currentBlock(), r = getSelection().getRangeAt(0);
+    const pre = document.createRange(); pre.selectNodeContents(b); pre.setEnd(r.startContainer, r.startOffset);
+    const m = /( {1,4})$/.exec(pre.toString());
+    if (!m) return;
+    for (let k = 0; k < m[1].length; k++) document.execCommand('delete');
+    afterEdit();
+  });
   // In a poem Enter ends a line. Enter on an empty line starts a new stanza, and Enter in an empty stanza leaves the poem.
   function onEmptyPoemLine(b) {
     const r = getSelection().getRangeAt(0);
@@ -2859,6 +2904,8 @@
     if (!e.target.closest('.popover') && !e.target.closest('#topbar') && !e.target.closest('#outline')) {
       $('#exportMenu').hidden = true;
     }
+    // the Chapters (or Entries) panel closes when you click out on the page
+    if (!$('#outline').hidden && !e.target.closest('#outline, #topbar, .popover, dialog, #modal, #cmpDlg, #fileDlg, #tplDlg, #settings, #notePop, #toast')) closeOutline();
   });
 
   // Settings controls

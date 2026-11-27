@@ -687,6 +687,16 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       await page.click('#readBack');
     }
 
+    // the Chapters panel closes when you click on the page, and stays open when you click inside it
+    {
+      await page.keyboard.press('Control+Shift+O');
+      ok(await page.evaluate(() => !document.querySelector('#outline').hidden), 'the chapters panel opens');
+      await page.click('#outlineHead');
+      ok(await page.evaluate(() => !document.querySelector('#outline').hidden), 'clicking inside the panel keeps it open');
+      await page.mouse.click(640, 300);
+      ok(await page.evaluate(() => document.querySelector('#outline').hidden), 'clicking on the page closes the panel');
+    }
+
     // poems: Enter ends a line, Enter on an empty line starts a stanza, and the next Enter leaves the poem
     {
       await page.evaluate((d) => window.__app.loadDoc(d, null), JSON.parse(JSON.stringify(D.newDoc())));
@@ -703,6 +713,31 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].blocks[3].t === 'poem'), 'Ctrl+Shift+P makes a paragraph a poem');
       await page.keyboard.press('Control+Shift+P');
       ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].blocks[3].t === 'p'), 'and takes it back');
+    }
+
+    // poems: several paragraphs become stanzas, Tab indents a line, chapters can be dragged into a new order
+    {
+      await page.evaluate((d) => window.__app.loadDoc(d, null), JSON.parse(JSON.stringify(D.newDoc())));
+      await page.click('#editor');
+      for (const t of ['one', 'two', '', 'three', 'four']) { if (t) await page.keyboard.type(t, { delay: 4 }); await page.keyboard.press('Enter'); }
+      await page.keyboard.press('Control+A'); await page.keyboard.press('Control+Shift+P');
+      await page.waitForTimeout(400);
+      const got = await page.evaluate(() => JSON.stringify(window.__app.snapshotDoc().chapters[0].blocks.filter((b) => b.runs.map((r) => r.text).join('').trim()).map((b) => [b.t, b.runs.map((r) => r.text).join('')])));
+      ok(got === JSON.stringify([['poem', 'one\ntwo'], ['poem', 'three\nfour']]), 'selected paragraphs join into stanzas, a blank paragraph starts the next one: ' + got);
+      await page.keyboard.press('Control+End'); await page.keyboard.press('Backspace');
+      await page.keyboard.press('Tab'); await page.keyboard.type('x', { delay: 4 });
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].blocks.some((b) => b.t === 'poem' && b.runs.map((r) => r.text).join('').endsWith('    x'))), 'Tab indents a line in a poem');
+      await page.keyboard.press('ArrowLeft'); await page.keyboard.press('Shift+Tab');
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].blocks.some((b) => b.t === 'poem' && b.runs.map((r) => r.text).join('').endsWith('x') && !b.runs.map((r) => r.text).join('').endsWith('    x'))), 'and Shift+Tab takes the indent back');
+
+      const three = JSON.parse(JSON.stringify(D.newDoc()));
+      three.chapters = ['A', 'B', 'C'].map((t) => Object.assign(D.newChapter(), { title: t, blocks: [{ t: 'p', runs: [{ text: 'text ' + t }] }] }));
+      await page.evaluate((d) => window.__app.loadDoc(d, null), three);
+      await page.keyboard.press('Control+Shift+O');
+      await page.dragAndDrop('#chapterList li:nth-child(1) .num', '#chapterList li:nth-child(3)');
+      await page.waitForTimeout(400);
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters.map((c) => c.title).join('') === 'BCA'), 'dragging a chapter by its number moves it');
+      await page.keyboard.press('Escape');
     }
 
     // selection word count and the report link

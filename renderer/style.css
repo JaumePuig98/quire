@@ -502,3 +502,8 @@ input.when-edit{flex:1;min-width:0;font-size:12.5px}
 #editor :not(.poem)+p.poem{margin-top:calc(var(--qg,.9em)*2)}
 #editor p.poem:has(+ :not(.poem)),#editor p.poem:last-child{margin-bottom:calc(var(--qg,.9em)*2)}
 body.justify #editor p.poem,body.justify .lineWrap p.poem{text-align:left!important;hyphens:none}
+
+/* chapters can be dragged by their number */
+#chapterList .num.grab{cursor:grab}
+#chapterList li.dragging{opacity:.45}
+#chapterList li.over{border-color:rgb(var(--accent));background:rgb(var(--accent)/.08)}
