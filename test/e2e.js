@@ -816,6 +816,54 @@ const body = (a) => a.doc.chapters[a.cur].blocks.map((b) => b.runs.map((r) => r.
       ok(await last() === 'p', '### stays plain text while two levels are chosen');
     }
 
+    // chapter title line and chapter notes
+    {
+      const dd = JSON.parse(JSON.stringify(D.newDoc()));
+      dd.chapters = [{ id: 'ca1', title: 'The Road', blocks: [{ t: 'h1', runs: [{ text: 'The Road' }] }, { t: 'p', runs: [{ text: 'It began.' }] }] }, { id: 'ca2', title: '', blocks: [{ t: 'p', runs: [{ text: 'Later.' }] }] }];
+      await page.evaluate((d) => window.__app.loadDoc(d, null), dd);
+      await page.waitForTimeout(300);
+      ok(await page.evaluate(() => !document.querySelector('#chapHead').hidden && document.querySelector('#chapTitle').value === 'The Road'), 'the chapter title shows above the text');
+      ok(await page.evaluate(() => !document.querySelector('#chapDup').hidden), 'a typed heading that repeats the title can be removed in one click');
+      await page.click('#chapDup'); await page.waitForTimeout(200);
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].blocks[0].t === 'p'), 'removing the repeated heading leaves the text');
+      await page.fill('#chapTitle', 'The Long Road'); await page.waitForTimeout(150);
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].title === 'The Long Road'), 'typing in the title line renames the chapter');
+      await page.click('#btnChapters'); await page.waitForTimeout(250);
+      ok(await page.evaluate(() => document.querySelector('#chapterList li input').value === 'The Long Road'), 'the chapter menu shows the new name');
+      await page.fill('#chapterList li input', 'Road'); await page.waitForTimeout(150);
+      ok(await page.evaluate(() => document.querySelector('#chapTitle').value === 'Road'), 'renaming in the menu changes the title line');
+      // notes
+      ok(await page.evaluate(() => !document.querySelector('#chapterList li .cn').classList.contains('has')), 'a chapter without a note is not highlighted');
+      await page.click('#chapterList li .cn'); await page.waitForTimeout(150);
+      await page.fill('.ch-memo textarea', 'Fix the timeline'); await page.waitForTimeout(150);
+      ok(await page.evaluate(() => document.querySelector('#chapterList li .cn').classList.contains('has')), 'the note button is highlighted when the chapter has a note');
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].memo === 'Fix the timeline'), 'the note is kept on the chapter');
+      await page.keyboard.press('Escape'); await page.waitForTimeout(150);
+      ok(await page.evaluate(() => !document.querySelector('.ch-memo') && !document.querySelector('#outline').hidden), 'Esc closes the note box and keeps the menu');
+      ok(await page.evaluate(() => document.querySelector('#chapterList li .cn').classList.contains('has')), 'the highlight stays after the box is closed');
+      await page.click('#chapterList li .cn'); await page.fill('.ch-memo textarea', ''); await page.waitForTimeout(100);
+      ok(await page.evaluate(() => !document.querySelector('#chapterList li .cn').classList.contains('has') && !('memo' in window.__app.snapshotDoc().chapters[0])), 'emptying the note removes it');
+      await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+      await page.evaluate(() => window.__app.savePrefs({ titleLine: false })); await page.waitForTimeout(100);
+      ok(await page.evaluate(() => document.querySelector('#chapHead').hidden), 'the title line can be turned off');
+      await page.evaluate(() => window.__app.savePrefs({ titleLine: true }));
+      // a heading typed at the top fills in the name; read mode keeps the title
+      const d2 = JSON.parse(JSON.stringify(D.newDoc()));
+      d2.chapters = [{ id: 'cb1', title: '', blocks: [{ t: 'p', runs: [] }] }, { id: 'cb2', title: 'Two', blocks: [{ t: 'p', runs: [{ text: 'x' }] }] }];
+      await page.evaluate((d) => window.__app.loadDoc(d, null), d2); await page.waitForTimeout(300);
+      await page.click('#editor'); await page.keyboard.type('# Dawn', { delay: 8 });
+      await page.waitForTimeout(200);
+      ok(await page.evaluate(() => document.querySelector('#chapTitle').value === 'Dawn' && window.__app.snapshotDoc().chapters[0].title === 'Dawn'), 'a heading typed at the top fills in the chapter name');
+      await page.keyboard.type(' breaks', { delay: 8 }); await page.waitForTimeout(200);
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].title === 'Dawn breaks'), 'the name follows the heading while it is being typed');
+      await page.fill('#chapTitle', 'Own name'); await page.click('#editor'); await page.keyboard.press('Control+End'); await page.keyboard.press('Control+Home'); await page.keyboard.type('!', { delay: 8 }); await page.waitForTimeout(200);
+      ok(await page.evaluate(() => window.__app.snapshotDoc().chapters[0].title === 'Own name'), 'a name you typed yourself is not overwritten by the heading');
+      await page.evaluate(() => window.__app.savePrefs({ readScope: 'chapter' }));
+      await page.evaluate(() => document.querySelector('[data-mode=read]').click()); await page.waitForTimeout(300);
+      ok(await page.evaluate(() => !document.querySelector('#chapHead').hidden && document.querySelector('#chapTitle').readOnly && document.querySelector('#chapTitle').value === 'Own name'), 'the title stays in read mode, read only');
+      await page.evaluate(() => document.querySelector('[data-mode=write]').click()); await page.waitForTimeout(300);
+    }
+
     // selection word count and the report link
     {
       await page.evaluate((d) => window.__app.loadDoc(d, null), (() => { const d = D.newDoc(); d.chapters[0].blocks = [{ t: 'p', runs: [{ text: 'alpha beta gamma delta' }] }]; return JSON.parse(JSON.stringify(d)); })());

@@ -163,6 +163,7 @@
       const ch = { id, title: str(c.title), blocks: blocks.length ? blocks : [{ t: 'p', runs: [] }] };
       if (typeof c.at === 'string' && !isNaN(Date.parse(c.at))) ch.at = c.at;
       if (c.nonum) ch.nonum = true; // this chapter's page numbers are not shown (the pages are still counted)
+      if (typeof c.memo === 'string' && c.memo.trim()) ch.memo = c.memo.slice(0, 100000); // the writer's private note on this chapter: never exported or counted
       if (Number.isInteger(c.goal) && c.goal > 0 && c.goal <= 2000000) ch.goal = c.goal; // this chapter's word target
       out.chapters.push(ch);
     }
@@ -199,7 +200,7 @@
     if (doc.kind === 'journal') { if (DATE_FMTS.indexOf(doc.dateFmt) > 0) head.dateFmt = doc.dateFmt; if (TIME_FMTS.indexOf(doc.timeFmt) > 0) head.timeFmt = doc.timeFmt; }
     const chapters = doc.chapters.map((c) => {
       const blocks = c.blocks.map((b) => '    ' + JSON.stringify({ t: b.t, runs: normalizeRuns(b.runs) })).join(',\n');
-      return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + (c.at ? ', "at": ' + JSON.stringify(c.at) : '') + (c.nonum ? ', "nonum": true' : '') + (c.goal > 0 ? ', "goal": ' + (c.goal | 0) : '') + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
+      return '  {\n   "id": ' + JSON.stringify(c.id) + ', "title": ' + JSON.stringify(c.title) + (c.at ? ', "at": ' + JSON.stringify(c.at) : '') + (c.nonum ? ', "nonum": true' : '') + (c.memo ? ', "memo": ' + JSON.stringify(c.memo) : '') + (c.goal > 0 ? ', "goal": ' + (c.goal | 0) : '') + ',\n   "blocks": [\n' + blocks + '\n   ]\n  }';
     });
     const used = usedNoteIds(doc);
     const notes = {};

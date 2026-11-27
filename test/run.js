@@ -252,6 +252,16 @@ const X = require('../exporters.js');
       const rh = await through(hb, hb);
       assert.strictEqual(rh.doc.chapters[1].blocks.map((b) => b.t).join(), 'h1,h2,h3,h4,p', 'headings 3 and 4 survive the Word copy');
     }
+    // 1c. a chapter note stays in the file and in the merge, and never reaches an export
+    {
+      const mb = mk(); mb.chapters[1].memo = 'Check the timeline before chapter five';
+      const back = D.parseDraft(D.serializeDraft(mb));
+      assert.strictEqual(back.chapters[1].memo, 'Check the timeline before chapter five', 'a chapter note survives saving and opening');
+      assert(!('memo' in back.chapters[0]), 'chapters without a note stay clean');
+      assert(!D.toMarkdown(back, {}).includes('timeline') && !D.toPlainText(back, {}).includes('timeline') && !X.toHtml(back, {}).includes('timeline'), 'chapter notes are never exported');
+      const rm = await through(mb, mb);
+      assert.strictEqual(rm.doc.chapters[1].memo, 'Check the timeline before chapter five', 'a chapter note survives the Word copy merge');
+    }
     // 2. edits on the phone: reword one paragraph with a note, delete one, add one, add a chapter, rename a chapter
     const ed = mk();
     ed.chapters[1].blocks[3] = P('After the break', { text: ' second note changed a lot', n: 'n2' }); // note anchor text changed

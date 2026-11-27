@@ -145,6 +145,7 @@
       ft.setAttribute('aria-expanded', String(!fmtHidden));
     }
     applyFmtItems();
+    syncTitleLine();
     const ac = ACCENTS[prefs.accent] || ACCENTS.amber;
     document.body.style.setProperty('--accent', dark ? ac.d : ac.l);
     document.body.style.setProperty('--accent-ink', dark ? ac.d : ac.ink); // darker on light backgrounds so text in the accent stays readable
@@ -293,8 +294,56 @@
     doc.modified = D.now();
     return doc;
   }
+  /* ---- chapter title above the text: the same field as the name in the chapter menu ---- */
+  const chapTitle = $('#chapTitle'), chapHead = $('#chapHead'), chapDup = $('#chapDup');
+  const sameTitle = (x, y) => D.norm ? D.norm(x) === D.norm(y) : String(x).trim().toLowerCase() === String(y).trim().toLowerCase();
+  function syncTitleLine() {
+    if (!doc || !chapTitle) return;
+    const c = doc.chapters[cur];
+    // in Read mode the title stays (read only); the whole-book view already names each chapter
+    const on = prefs.titleLine !== false && kindOf() !== 'journal' && D.headingPlan(doc).chapterHeadings && !readingBook() && (!reading || !!c.title.trim());
+    chapHead.hidden = !on;
+    chapTitle.readOnly = reading;
+    if (!on) return;
+    if (document.activeElement !== chapTitle) chapTitle.value = c.title;
+    chapTitle.placeholder = 'Untitled ' + unitWord().toLowerCase();
+    chapTitle.setAttribute('aria-label', unitWord() + ' title');
+    const first = c.blocks.find((b) => D.blockText(b).trim());
+    chapDup.hidden = !(c.title.trim() && first && first.t === 'h1' && sameTitle(D.blockText(first), c.title)) || reading;
+    chapTitle.tabIndex = reading ? -1 : 0;
+  }
+  // A heading typed at the top of a chapter fills in the chapter's name while the name is empty (or still the heading's own text), so it is never typed twice
+  let adopted = null;
+  function adoptTitle() {
+    if (!doc || reading || kindOf() === 'journal' || !D.headingPlan(doc).chapterHeadings) return;
+    const f = editor.firstElementChild;
+    if (!f || f.tagName !== 'H1') return;
+    const text = f.textContent.replace(/\s+/g, ' ').trim();
+    const c = doc.chapters[cur];
+    if (!text || text === c.title) return;
+    if (!c.title.trim() || (adopted && adopted.id === c.id && adopted.text === c.title)) {
+      c.title = text.slice(0, 200); adopted = { id: c.id, text: c.title };
+      const oi = $$('#chapterList li')[cur] && $$('#chapterList li')[cur].querySelector('input'); if (oi) oi.value = c.title;
+      syncTitleLine();
+    }
+  }
+  chapTitle.addEventListener('input', () => {
+    const c = doc.chapters[cur]; c.title = chapTitle.value; markDirty(); updateStatus();
+    const oi = $$('#chapterList li')[cur] && $$('#chapterList li')[cur].querySelector('input'); if (oi) oi.value = c.title;
+    syncTitleLine();
+  });
+  chapTitle.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); editor.focus(); const f = editor.firstElementChild; if (f) { const r = document.createRange(); r.selectNodeContents(f); r.collapse(true); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } kick(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); editor.focus(); }
+  });
+  chapDup.addEventListener('click', () => {
+    syncFromDom(); commitHistory();
+    const c = doc.chapters[cur]; const i = c.blocks.findIndex((b) => D.blockText(b).trim());
+    if (i >= 0 && c.blocks[i].t === 'h1') { c.blocks.splice(i, 1); if (!c.blocks.length) c.blocks.push({ t: 'p', runs: [] }); renderChapter(); markDirty(); updateStatus(); editor.focus(); placeCaretAtEnd(); kick(true); }
+  });
   function renderChapter() {
     setLive(null);
+    syncTitleLine();
     layoutMarks();
     if (readingBook()) {
       const multi = doc.chapters.length > 1;
@@ -471,6 +520,7 @@
   // Autosave: to the file once it has a name, otherwise to a recovery copy.
   let autoTimer;
   function markDirty() {
+    adoptTitle();
     dirty = true;
     setSaveState('Unsaved changes');
     clearTimeout(autoTimer);
@@ -1810,6 +1860,7 @@
     if (on && review) setReview(false);
     if (on) syncFromDom();
     reading = on;
+    syncTitleLine();
     document.body.classList.toggle('reading', on);
     editor.contentEditable = on ? 'false' : 'true';
     $('#readbar').hidden = !on;
@@ -1876,6 +1927,7 @@
     updateStatus();
     if (!reading) { editor.focus(); placeCaretAtEnd(); kick(true); }
   }
+  let memoOpen = null; // the chapter whose note is open in the menu
   function renderOutline() {
     const ol = $('#chapterList');
     ol.innerHTML = '';
@@ -1889,7 +1941,7 @@
       const inp = document.createElement('input');
       inp.value = c.title; inp.placeholder = kindOf() === 'journal' ? 'Title (optional)' : chapterHeading(c) || 'Untitled ' + unitWord().toLowerCase(); inp.setAttribute('aria-label', unitWord() + ' ' + (i + 1) + ' title');
       inp.addEventListener('focus', () => { if (i !== cur) selectChapter(i); });
-      inp.addEventListener('input', () => { c.title = inp.value; markDirty(); updateStatus(); });
+      inp.addEventListener('input', () => { c.title = inp.value; markDirty(); updateStatus(); if (i === cur) syncTitleLine(); });
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); closeOutline(); } });
       // the word count doubles as the chapter's target: click it to set one (empty or 0 removes it)
       const goal = c.goal > 0 ? c.goal : 0, count = wordCounts[i] || 0;
@@ -1909,12 +1961,15 @@
       // Drawn icons instead of text characters: the glyphs of #, arrows and the cross differ in size and baseline between fonts, which made the row look uneven.
       const ICON = (d, slash) => '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="' + d + '"/>' + (slash ? '<path class="slash" d="M2.5 13.5L13.5 2.5"/>' : '') + '</svg>';
       const mk = (label, title, fn, dis) => { const b = document.createElement('button'); b.type = 'button'; if (label.charAt(0) === '<') b.innerHTML = label; else b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.disabled = !!dis; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b; };
+      const hasMemo = !!(c.memo && c.memo.trim());
+      const cn = mk(ICON('M3.5 2.5h9v11h-9zM5.8 6h4.4M5.8 8.6h4.4M5.8 11h2.6'), hasMemo ? 'Notes for this chapter (there is a note). Never exported or counted.' : 'Add a note to this chapter. Never exported or counted.', () => { memoOpen = memoOpen === c.id ? null : c.id; renderOutline(); if (memoOpen) { const t = $$('#chapterList .ch-memo textarea')[0]; if (t) t.focus(); } });
+      cn.className = 'cn' + (hasMemo ? ' has' : ''); cn.setAttribute('aria-expanded', String(memoOpen === c.id));
       const nb = mk(ICON('M6.2 2.5L5 13.5M11 2.5L9.8 13.5M2.8 6h10.6M2.6 10h10.6', true), c.nonum ? 'Page numbers are hidden on this chapter. Click to show them.' : 'Page numbers are shown on this chapter. Click to hide them (the pages are still counted).', () => { c.nonum = !c.nonum; if (!c.nonum) delete c.nonum; markDirty(); renderOutline(); });
       nb.className = 'pn' + (c.nonum ? ' off' : ''); nb.setAttribute('aria-pressed', String(!c.nonum));
       // two lines: the title has the whole width, the word count and the tools sit under it
       const top = document.createElement('div'); top.className = 'ch-top'; top.append(num, inp);
       const tools = document.createElement('div'); tools.className = 'ch-tools';
-      tools.append(wc, nb,
+      tools.append(wc, cn, nb,
         mk(ICON('M8 13V3M3.6 7.4L8 3l4.4 4.4'), 'Move chapter up', () => moveChapter(i, -1), i === 0),
         mk(ICON('M8 3v10M3.6 8.6L8 13l4.4-4.4'), 'Move chapter down', () => moveChapter(i, 1), i === doc.chapters.length - 1),
         mk(ICON('M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6'), 'Delete chapter', () => deleteChapter(i), doc.chapters.length < 2));
@@ -1930,6 +1985,16 @@
       const uw = unitWord().toLowerCase();
       tools.querySelectorAll('button').forEach((b) => { b.title = b.title.replace('chapter', uw); if (b.getAttribute('aria-label')) b.setAttribute('aria-label', b.getAttribute('aria-label').replace('chapter', uw)); });
       li.append(top, tools);
+      if (memoOpen === c.id) {
+        const box = document.createElement('div'); box.className = 'ch-memo';
+        const ta = document.createElement('textarea'); ta.maxLength = 100000; ta.value = c.memo || ''; ta.rows = 4;
+        ta.placeholder = 'Notes for this ' + uw + '. They are never exported or counted.'; ta.setAttribute('aria-label', 'Notes for ' + uw + ' ' + (i + 1));
+        ta.addEventListener('input', () => {
+          if (ta.value.trim()) c.memo = ta.value; else delete c.memo;
+          cn.classList.toggle('has', !!ta.value.trim()); markDirty();
+        });
+        box.appendChild(ta); li.appendChild(box);
+      }
       // books and texts: drag the number to move a chapter (the arrow buttons stay for the keyboard)
       if (kindOf() !== 'journal' && doc.chapters.length > 1) {
         num.draggable = true; num.classList.add('grab'); num.title = 'Drag to move';
@@ -1984,6 +2049,7 @@
       ol.appendChild(li);
     });
     updateBookTotal();
+    syncTitleLine();
     applyKind();
   }
   // Change when an entry was written. The entries stay in date order, so the entry moves to where its new date belongs.
@@ -2564,6 +2630,7 @@
     }
     if (e.key === 'F11') { e.preventDefault(); window.api.toggleFullscreen(); return; }
     if (e.key === 'F10') { e.preventDefault(); showChrome(); $('#btnChapters').focus(); return; } // the menu bar by keyboard
+    if (e.key === 'Escape' && e.target.closest && e.target.closest('.ch-memo')) { e.preventDefault(); memoOpen = null; renderOutline(); return; }
     if (e.key === 'Escape' && !$('#notebook').hidden && $('#notebook').contains(document.activeElement)) { e.preventDefault(); nbHide(); return; }
     if (e.key === 'F3' && !fb.hidden) { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); return; }
     if (e.key === 'Escape') {
@@ -2588,7 +2655,7 @@
       else if (e.code === 'KeyS') { e.preventDefault(); save('as'); }
       return;
     }
-    if (e.target.closest && e.target.closest('#notebook') && k !== 'k' && k !== 's') return; // typing in the notebook is plain typing
+    if (e.target.closest && e.target.closest('#notebook, .ch-memo, #chapTitle') && k !== 'k' && k !== 's') return; // typing in the notebook is plain typing
     const shift = e.shiftKey;
     switch (k) {
       case 'k': if (!shift) { e.preventDefault(); nbToggle(); } break;

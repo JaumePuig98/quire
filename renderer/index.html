@@ -12,6 +12,7 @@
 
 <main id="scroller">
   <div id="page">
+    <div id="chapHead" hidden><input id="chapTitle" type="text" maxlength="200" autocomplete="off" spellcheck="true" aria-label="Chapter title"><button type="button" id="chapDup" hidden>Remove the matching heading below</button></div>
     <div id="editor" contenteditable="true" tabindex="0" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document"></div>
     <div id="gutter" role="group" aria-label="Notes"></div>
   </div>
@@ -180,6 +181,7 @@
         <div class="row slider"><span>Column width</span><input type="range" min="480" max="940" step="10" data-pref="measure" aria-label="Column width"><span class="num"><input type="number" min="480" max="940" step="10" data-num="measure" aria-label="Column width, exact value"><em>px</em></span><button type="button" class="reset" data-reset="measure" title="Back to the default" aria-label="Reset Column width">&#8634;</button></div>
       </section>
       <section data-secpane="bar" hidden>
+        <label class="check"><input type="checkbox" data-pref="titleLine"> Show the chapter title above the text <span class="hint">The same name as in the chapter menu</span></label>
         <label class="check"><input type="checkbox" data-pref="fmtbar"> Show the formatting bar <span class="hint">Ctrl+/</span></label>
         <label class="check"><input type="checkbox" data-pref="fmtHints"> Show the shortcuts next to the buttons</label>
         <div class="row"><label for="headingDepth">Heading levels</label>

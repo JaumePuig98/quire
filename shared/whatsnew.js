@@ -13,6 +13,7 @@
     '1.6.1': 'New in 1.6: poems get stanza spacing, indented lines and a Poem button that joins lines into stanzas. Drag a chapter by its number to reorder it. The Chapters panel closes when you click the page.',
     '1.7.0': 'New in 1.7: a Notebook for your book. Press Ctrl+K to search and keep notes about places, people and customs in a panel beside your writing. Pages are never exported or counted.',
     '1.7.1': 'New in 1.7.1: pick which buttons show in the formatting bar, and use headings down to level 4 (Ctrl+3, Ctrl+4, ###) by choosing 3 or 4 levels in Settings. Quote, Poem and Scene break start hidden.',
+    '1.8.0': 'New in 1.8: the chapter title now shows above your text, one name shared with the chapter menu, and every chapter can have a private note in the menu. Notes are never exported or counted.',
   };
 
 
